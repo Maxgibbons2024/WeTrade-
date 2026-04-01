@@ -7,7 +7,7 @@ import SlideOver from '../components/SlideOver';
 import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
-import { useQuery, useRealtime, insertRow } from '../hooks/useSupabase';
+import { useQuery, useRealtime, insertRow, updateRow } from '../hooks/useSupabase';
 import {
   formatCurrency,
   formatDate,
@@ -41,6 +41,7 @@ export default function Deals() {
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingDeal, setEditingDeal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
 
@@ -100,6 +101,26 @@ export default function Deals() {
     });
   }
 
+  function handleEditDeal(deal) {
+    setEditingDeal(deal);
+    setForm({
+      client_name: deal.client_name || '',
+      closer_id: deal.closer_id || 'lloyd',
+      closer_name: deal.closer_name || 'Lloyd',
+      front_end: deal.front_end ?? '',
+      monthly_amount: deal.monthly_amount ?? '',
+      programme: deal.programme || 'Kickstarter',
+      source: deal.source || 'manual',
+      payment_method: deal.payment_method || 'stripe',
+      onboarding_date: deal.onboarding_date ? deal.onboarding_date.slice(0, 16) : '',
+      onboarding_assigned_to: deal.onboarding_assigned_to || '',
+      notes: deal.notes || '',
+      status: deal.status || 'active',
+      created_at: deal.created_at ? deal.created_at.slice(0, 10) : '',
+    });
+    setShowForm(true);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.client_name.trim()) {
@@ -112,20 +133,37 @@ export default function Deals() {
     }
     setSubmitting(true);
     try {
-      await insertRow('deals', {
-        ...form,
+      const payload = {
+        client_name: form.client_name,
+        closer_id: form.closer_id,
+        closer_name: form.closer_name,
         front_end: Number(form.front_end),
         monthly_amount: Number(form.monthly_amount) || 0,
+        programme: form.programme,
+        source: form.source,
+        payment_method: form.payment_method,
         onboarding_date: form.onboarding_date || null,
         onboarding_assigned_to: form.onboarding_assigned_to || null,
         notes: form.notes || null,
-      });
-      toast.success('Deal added successfully');
+        status: form.status,
+      };
+
+      if (editingDeal) {
+        if (form.created_at) {
+          payload.created_at = new Date(form.created_at).toISOString();
+        }
+        await updateRow('deals', editingDeal.id, payload);
+        toast.success('Deal updated successfully');
+      } else {
+        await insertRow('deals', payload);
+        toast.success('Deal added successfully');
+      }
       setForm(EMPTY_FORM);
+      setEditingDeal(null);
       setShowForm(false);
       refetch();
     } catch (err) {
-      toast.error(`Failed to add deal: ${err.message}`);
+      toast.error(`Failed to ${editingDeal ? 'update' : 'add'} deal: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -145,7 +183,7 @@ export default function Deals() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold">Deals</h2>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setEditingDeal(null); setForm(EMPTY_FORM); setShowForm(true); }}
           className="bg-brand-cyan text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-mid transition-colors"
         >
           + Add Deal
@@ -177,54 +215,12 @@ export default function Deals() {
       <SortableTable
         columns={columns}
         data={filtered}
-        onRowClick={(row) => setExpandedDeal(expandedDeal?.id === row.id ? null : row)}
+        onRowClick={(row) => handleEditDeal(row)}
       />
 
-      {/* Expanded deal detail */}
-      {expandedDeal && (
-        <div className="bg-[#1a1d20] rounded-xl border border-brand-cyan/30 p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-brand-cyan">{expandedDeal.client_name} — Details</h3>
-            <button onClick={() => setExpandedDeal(null)} className="text-gray-500 hover:text-white text-sm">Close</button>
-          </div>
-          {expandedDeal.notes && (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Notes</p>
-              <p className="text-sm text-gray-300">{expandedDeal.notes}</p>
-            </div>
-          )}
-          {dealPlan && (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Payment Plan</p>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <span>Monthly: {formatCurrency(dealPlan.monthly_amount)}</span>
-                <span>Collected: {formatCurrency(dealPlan.total_collected)} / {formatCurrency(dealPlan.total_value)}</span>
-                <span>Remaining: {dealPlan.months_remaining} months</span>
-                <StatusBadge status={dealPlan.status} />
-              </div>
-            </div>
-          )}
-          {dealFathom.length > 0 && (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Fathom Calls</p>
-              {dealFathom.map((f) => (
-                <div key={f.id} className="text-sm text-gray-300">
-                  Duration: {Math.round(f.duration_seconds / 60)}m · Talk: {Math.round(f.talk_time_seconds / 60)}m
-                  {f.outcome && ` · ${f.outcome}`}
-                  {f.transcript_url && (
-                    <a href={f.transcript_url} target="_blank" rel="noopener noreferrer" className="text-brand-cyan ml-2 hover:underline">
-                      View transcript
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Add deal slide-over form */}
-      <SlideOver open={showForm} onClose={() => setShowForm(false)} title="Add New Deal">
+      <SlideOver open={showForm} onClose={() => { setShowForm(false); setEditingDeal(null); setForm(EMPTY_FORM); }} title={editingDeal ? `Edit: ${editingDeal.client_name}` : 'Add New Deal'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Client Name *</label>
@@ -236,6 +232,18 @@ export default function Deals() {
               className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
             />
           </div>
+          {editingDeal && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
+              <input
+                name="created_at"
+                type="date"
+                value={form.created_at || ''}
+                onChange={handleFormChange}
+                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Closer *</label>
@@ -297,7 +305,7 @@ export default function Deals() {
             disabled={submitting}
             className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50"
           >
-            {submitting ? 'Saving...' : 'Save Deal'}
+            {submitting ? 'Saving...' : editingDeal ? 'Update Deal' : 'Save Deal'}
           </button>
         </form>
       </SlideOver>
