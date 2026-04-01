@@ -86,26 +86,21 @@ alter table eod_calls enable row level security;
 alter table fathom_calls enable row level security;
 alter table manual_payments enable row level security;
 
--- Policies: allow all operations for authenticated users
-create policy "Authenticated users full access on deals"
-  on deals for all using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+-- Policies: allow all operations for all users (including anon key)
+create policy "Public full access on deals"
+  on deals for all using (true) with check (true);
 
-create policy "Authenticated users full access on payment_plans"
-  on payment_plans for all using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+create policy "Public full access on payment_plans"
+  on payment_plans for all using (true) with check (true);
 
-create policy "Authenticated users full access on eod_calls"
-  on eod_calls for all using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+create policy "Public full access on eod_calls"
+  on eod_calls for all using (true) with check (true);
 
-create policy "Authenticated users full access on fathom_calls"
-  on fathom_calls for all using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+create policy "Public full access on fathom_calls"
+  on fathom_calls for all using (true) with check (true);
 
-create policy "Authenticated users full access on manual_payments"
-  on manual_payments for all using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
+create policy "Public full access on manual_payments"
+  on manual_payments for all using (true) with check (true);
 
 -- ============================================================
 -- REALTIME
