@@ -38,6 +38,7 @@ const EMPTY_FORM = {
 export default function Deals() {
   const [filterCloser, setFilterCloser] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [search, setSearch] = useState('');
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -56,13 +57,15 @@ export default function Deals() {
 
   // Apply filters
   const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
     return deals.filter((d) => {
       if (filterCloser !== 'all' && d.closer_id !== filterCloser) return false;
       if (filterStatus !== 'all' && d.status !== filterStatus) return false;
+      if (q && !d.client_name?.toLowerCase().includes(q) && !d.closer_name?.toLowerCase().includes(q)) return false;
       if (!isInDateRange(d.created_at, dateRange.start, dateRange.end)) return false;
       return true;
     });
-  }, [deals, filterCloser, filterStatus, dateRange]);
+  }, [deals, filterCloser, filterStatus, dateRange, search]);
 
   const columns = [
     {
@@ -194,6 +197,13 @@ export default function Deals() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search client or closer..."
+          className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan w-56"
+        />
         <select
           value={filterCloser}
           onChange={(e) => setFilterCloser(e.target.value)}
