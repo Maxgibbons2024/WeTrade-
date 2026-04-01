@@ -1,116 +1,107 @@
--- WeTrade March 2026 Historical Data Import
--- Run this in the Supabase SQL Editor
+-- WeTrade Historical Data Import -- March 2026
+-- Run in Supabase SQL Editor
 
--- ============================================================
--- STEP 1: Update closer_id constraint to include Shea and Chris
--- ============================================================
-
+-- Step 1: Allow new closers (shea, chris)
 ALTER TABLE deals DROP CONSTRAINT IF EXISTS deals_closer_id_check;
 ALTER TABLE deals ADD CONSTRAINT deals_closer_id_check
   CHECK (closer_id IN ('lloyd','dave','zak','joe','shea','chris'));
 
-ALTER TABLE eod_calls DROP CONSTRAINT IF EXISTS eod_calls_closer_id_check;
+-- Step 2: Insert deals
+INSERT INTO deals (created_at, client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status) VALUES
+  ('2025-11-28', 'Steven Taylor-Smith', 'Lloyd', 'lloyd', 1000.0, 1000.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-01-20', 'Rosie Hunt', 'Lloyd', 'lloyd', 500.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-09-01', 'Car', 'Lloyd', 'lloyd', 500.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-05-07', 'Ahmet Eker', 'Lloyd', 'lloyd', 500.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-01-30', 'Glyn Huges', 'Shea', 'shea', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-02-02', 'Julie Miller', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-03', 'Michael Parker', 'Shea', 'shea', 5000.0, 0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-12-10', 'Adam Kyriacou', 'Zak', 'zak', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-02-04', 'Suvanne southgate', 'Zak', 'zak', 1000.0, 1000.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-02-04', 'Ahmad Waqas', 'Zak', 'zak', 2000.0, 2000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-01-03', 'Afice Folorunsho Jimoh', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-05', 'Linda Ho', 'Lloyd', 'lloyd', 5000.0, 0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-05', 'lonsb65@gmail.com', 'Joe', 'joe', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-12-11', 'Neil Howe', 'Zak', 'zak', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-02-05', 'William Jenkins', 'Shea', 'shea', 1500.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-06', 'Freya Locke', 'Lloyd', 'lloyd', 2000.0, 750.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-02-10', 'Darren Layden', 'Zak', 'zak', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-10-14', 'Nicholas Blakemore', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-03-10', 'Paul Karimlar', 'Zak', 'zak', 1000.0, 1000.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-02-10', 'Steve Swindon', 'Lloyd', 'lloyd', 500.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-12-13', 'Michael Amaeshike', 'Zak', 'zak', 250.0, 250.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-01-13', 'Brad McKenzie', 'Dave', 'dave', 2000.0, 4000.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-02-13', 'Bob Wilkinson', 'Zak', 'zak', 250.0, 250.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-01-16', 'Adrian Sunderman', 'Zak', 'zak', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-16', 'Omid Atr Forosh', 'Dave', 'dave', 2000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-19', 'Imran Iqbal', 'Zak', 'zak', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-02-16', 'Sean Bushell', 'Zak', 'zak', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-02-10', 'Harry Haynes', 'Shea', 'shea', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-12-19', 'Robin Taylor', 'Lloyd', 'lloyd', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-03-18', 'Stuart Hodgson', 'Zak', 'zak', 5000.0, 0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-01-14', 'Adrian Lockstone', 'Chris', 'chris', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-12-23', 'Robert Goodfellow', 'Lloyd', 'lloyd', 400.0, 400.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-02-08', 'Tim Canning', 'Zak', 'zak', 2000.0, 1000.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-11-25', 'Oskar Winberg', 'Dave', 'dave', 500.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-10-09', 'Annenilan Arulgnanaseelan', 'Dave', 'dave', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-02-21', 'Ryan Newson', 'Dave', 'dave', 250.0, 250.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-11-27', 'Magnus Larsson', 'Dave', 'dave', 750.0, 750.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-02-27', 'David Elliott', 'Joe', 'joe', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2026-01-26', 'Joanna Fossey', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-11-26', 'Nicholas Hubbard', 'Zak', 'zak', 1000.0, 1000.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-03-27', 'Matt Oldroyd', 'Zak', 'zak', 5000.0, 0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2025-11-27', 'M Hassen', 'Zak', 'zak', 250.0, 250.0, 'Kickstarter', 'manual', 'bank_transfer', 'active'),
+  ('2026-01-26', 'Issac Cheung', 'Shea', 'shea', 1000.0, 1000.0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-02-09', 'Paul Rudkowskyj', 'Dave', 'dave', 1500.0, 1500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-03-31', 'Layton Robinson', 'Dave', 'dave', 2000.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-03-31', 'Stuart Crane', 'Dave', 'dave', 1500.0, 700.0, 'Pro', 'manual', 'stripe', 'active'),
+  ('2026-04-01', 'Julian Boden', 'Lloyd', 'lloyd', 5000.0, 0, 'Kickstarter', 'manual', 'stripe', 'active'),
+  ('2025-12-19', 'Samson Habte', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active');
 
--- ============================================================
--- STEP 2: Insert March 2026 Deals
--- ============================================================
+-- Step 3: Insert payment plans
+INSERT INTO payment_plans (client_name, closer_id, monthly_amount, total_value, total_collected, months_remaining, next_due_date, status, last_payment_date, last_payment_confirmed) VALUES
+  ('Steven Taylor-Smith', 'lloyd', 1000.0, 8000.0, 7000.0, 1, '2026-04-27', 'active', '2026-03-27', true),
+  ('Rosie Hunt', 'lloyd', 500.0, 8000.0, 6500.0, 3, '2026-04-27', 'active', '2026-03-27', true),
+  ('Car', 'lloyd', 500.0, 8000.0, 4000.0, 4, '2026-05-01', 'active', '2026-04-01', true),
+  ('Ahmet Eker', 'lloyd', 500.0, 8000.0, 7000.0, 2, '2026-04-30', 'active', '2026-03-30', true),
+  ('Glyn Huges', 'shea', 1000.0, 5000.0, 1000.0, 4, '2026-04-03', 'active', '2026-03-03', true),
+  ('Julie Miller', 'zak', 500.0, 5000.0, 2500.0, 5, '2026-04-03', 'active', '2026-03-03', true),
+  ('Adam Kyriacou', 'zak', 1000.0, 5000.0, 4000.0, 1, '2026-04-03', 'active', '2026-03-03', true),
+  ('Suvanne southgate', 'zak', 1000.0, 8000.0, 6000.0, 2, '2026-04-04', 'active', '2026-03-04', true),
+  ('Ahmad Waqas', 'zak', 2000.0, 5000.0, 3000.0, 1, '2026-04-04', 'active', '2026-03-04', true),
+  ('Afice Folorunsho Jimoh', 'zak', 500.0, 5000.0, 3000.0, 4, '2026-04-04', 'active', '2026-03-04', true),
+  ('lonsb65@gmail.com', 'joe', 500.0, 5000.0, 500.0, 9, '2026-04-05', 'active', '2026-03-05', true),
+  ('Neil Howe', 'zak', 1000.0, 5000.0, 4000.0, 1, '2026-04-06', 'active', '2026-03-06', true),
+  ('William Jenkins', 'shea', 1000.0, 5000.0, 4000.0, 1, '2026-04-06', 'active', '2026-03-06', true),
+  ('Freya Locke', 'lloyd', 750.0, 5000.0, 2000.0, 4, '2026-04-06', 'active', '2026-03-06', true),
+  ('Darren Layden', 'zak', 1000.0, 5000.0, 2000.0, 3, '2026-04-10', 'active', '2026-03-10', true),
+  ('Nicholas Blakemore', 'zak', 500.0, 5000.0, 3000.0, 4, '2026-04-10', 'active', '2026-03-10', true),
+  ('Paul Karimlar', 'zak', 1000.0, 8000.0, 4000.0, 4, '2026-04-12', 'active', '2026-03-12', true),
+  ('Steve Swindon', 'lloyd', 500.0, 8000.0, 5500.0, 5, '2026-04-12', 'active', '2026-03-12', true),
+  ('Michael Amaeshike', 'zak', 250.0, 5000.0, 2750.0, 9, '2026-04-13', 'active', '2026-03-13', true),
+  ('Brad McKenzie', 'dave', 4000.0, 8000.0, 8000.0, 0, '2026-04-13', 'completed', '2026-03-13', true),
+  ('Bob Wilkinson', 'zak', 250.0, 5000.0, 2250.0, 11, '2026-04-14', 'active', '2026-03-14', true),
+  ('Adrian Sunderman', 'zak', 1000.0, 5000.0, 4000.0, 1, '2026-04-16', 'active', '2026-03-16', true),
+  ('Omid Atr Forosh', 'dave', 1000.0, 5000.0, 2000.0, 3, '2026-04-16', 'active', '2026-03-16', true),
+  ('Imran Iqbal', 'zak', 1000.0, 5000.0, 1000.0, 4, '2026-04-16', 'active', '2026-03-16', true),
+  ('Sean Bushell', 'zak', 1000.0, 5000.0, 3000.0, 2, '2026-04-17', 'active', '2026-03-17', true),
+  ('Harry Haynes', 'shea', 1000.0, 5000.0, 2000.0, 3, '2026-04-17', 'active', '2026-03-17', true),
+  ('Robin Taylor', 'lloyd', 500.0, 5000.0, 3000.0, 4, '2026-04-18', 'active', '2026-03-18', true),
+  ('Adrian Lockstone', 'chris', 1000.0, 5000.0, 2000.0, 3, '2026-04-18', 'active', '2026-03-18', true),
+  ('Robert Goodfellow', 'lloyd', 400.0, 8000.0, 5400.0, 1, '2026-04-23', 'active', '2026-03-23', true),
+  ('Tim Canning', 'zak', 1000.0, 8000.0, 2000.0, 6, '2026-04-23', 'active', '2026-03-23', true),
+  ('Oskar Winberg', 'dave', 500.0, 5000.0, 4000.0, 2, '2026-04-25', 'active', '2026-03-25', true),
+  ('Annenilan Arulgnanaseelan', 'dave', 500.0, 5000.0, 4500.0, 1, '2026-04-26', 'active', '2026-03-26', true),
+  ('Ryan Newson', 'dave', 250.0, 5000.0, 4250.0, 3, '2026-04-27', 'active', '2026-03-27', true),
+  ('Magnus Larsson', 'dave', 750.0, 8000.0, 5000.0, 4, '2026-04-27', 'active', '2026-03-27', true),
+  ('David Elliott', 'joe', 500.0, 5000.0, 1500.0, 7, '2026-04-27', 'active', '2026-03-27', true),
+  ('Joanna Fossey', 'zak', 500.0, 5000.0, 3000.0, 4, '2026-04-27', 'active', '2026-03-27', true),
+  ('Nicholas Hubbard', 'zak', 1000.0, 8000.0, 5000.0, 3, '2026-04-27', 'active', '2026-03-27', true),
+  ('M Hassen', 'zak', 250.0, 5000.0, 2500.0, 10, '2026-04-28', 'active', '2026-03-28', true),
+  ('Issac Cheung', 'shea', 1000.0, 5000.0, 4000.0, 1, '2026-04-28', 'active', '2026-03-28', true),
+  ('Paul Rudkowskyj', 'dave', 1500.0, 8000.0, 6500.0, 1, '2026-04-29', 'active', '2026-03-29', true),
+  ('Layton Robinson', 'dave', 500.0, 5000.0, 2000.0, 6, '2026-04-28', 'active', '2026-03-31', true),
+  ('Stuart Crane', 'dave', 700.0, 5000.0, 1500.0, 5, '2026-04-28', 'active', '2026-03-31', true),
+  ('Samson Habte', 'zak', 500.0, 5000.0, 2500.0, 5, '2026-05-01', 'active', '2026-04-01', true);
 
--- Lloyd's deals
-INSERT INTO deals (client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status, created_at)
-VALUES
-  ('Julian Boden', 'Lloyd', 'lloyd', 5000, 0, 'Elite', 'manual', 'stripe', 'active', '2026-03-01T10:00:00Z'),
-  ('Louis McKenzie', 'Lloyd', 'lloyd', 3000, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-01T10:00:00Z'),
-  ('Finley Grant', 'Lloyd', 'lloyd', 500, 200, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-03T10:00:00Z'),
-  ('Rory Campbell', 'Lloyd', 'lloyd', 1000, 250, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-03T10:00:00Z'),
-  ('Alexander Lewis', 'Lloyd', 'lloyd', 2000, 300, 'Pro', 'manual', 'stripe', 'active', '2026-03-04T10:00:00Z'),
-  ('Ethan Walsh', 'Lloyd', 'lloyd', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-05T10:00:00Z'),
-  ('James O''Sullivan', 'Lloyd', 'lloyd', 1500, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-07T10:00:00Z'),
-  ('Nathan Brooks', 'Lloyd', 'lloyd', 3000, 300, 'Pro', 'manual', 'stripe', 'active', '2026-03-10T10:00:00Z'),
-  ('Connor Reid', 'Lloyd', 'lloyd', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-12T10:00:00Z'),
-  ('Harry Sutton', 'Lloyd', 'lloyd', 2500, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-15T10:00:00Z'),
-  ('Leo Patterson', 'Lloyd', 'lloyd', 1000, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-18T10:00:00Z'),
-  ('Oliver Hughes', 'Lloyd', 'lloyd', 5000, 0, 'Elite', 'manual', 'stripe', 'active', '2026-03-20T10:00:00Z'),
-  ('George Mitchell', 'Lloyd', 'lloyd', 500, 175, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-22T10:00:00Z'),
-  ('Ryan Clarke', 'Lloyd', 'lloyd', 2000, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-25T10:00:00Z'),
-  ('Daniel Foster', 'Lloyd', 'lloyd', 1500, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-28T10:00:00Z');
-
--- Dave's deals
-INSERT INTO deals (client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status, created_at)
-VALUES
-  ('Marcus Johnson', 'Dave', 'dave', 1000, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-01T10:00:00Z'),
-  ('Tyler Bennett', 'Dave', 'dave', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-02T10:00:00Z'),
-  ('Callum Ward', 'Dave', 'dave', 2000, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-04T10:00:00Z'),
-  ('Adam Fisher', 'Dave', 'dave', 500, 175, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-06T10:00:00Z'),
-  ('Luke Harrison', 'Dave', 'dave', 3000, 300, 'Pro', 'manual', 'stripe', 'active', '2026-03-08T10:00:00Z'),
-  ('Ben Taylor', 'Dave', 'dave', 1500, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-11T10:00:00Z'),
-  ('Tom Edwards', 'Dave', 'dave', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-14T10:00:00Z'),
-  ('Sam Wright', 'Dave', 'dave', 2500, 275, 'Pro', 'manual', 'stripe', 'active', '2026-03-17T10:00:00Z'),
-  ('Jake Morgan', 'Dave', 'dave', 1000, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-21T10:00:00Z'),
-  ('Chris Evans', 'Dave', 'dave', 5000, 0, 'Elite', 'manual', 'stripe', 'active', '2026-03-24T10:00:00Z');
-
--- Zak's deals
-INSERT INTO deals (client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status, created_at)
-VALUES
-  ('Aiden Murphy', 'Zak', 'zak', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-01T10:00:00Z'),
-  ('Kai Robinson', 'Zak', 'zak', 2000, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-03T10:00:00Z'),
-  ('Max Turner', 'Zak', 'zak', 1000, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-05T10:00:00Z'),
-  ('Liam Cooper', 'Zak', 'zak', 3000, 300, 'Pro', 'manual', 'stripe', 'active', '2026-03-09T10:00:00Z'),
-  ('Noah Jenkins', 'Zak', 'zak', 500, 175, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-13T10:00:00Z'),
-  ('Oscar Barnes', 'Zak', 'zak', 1500, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-16T10:00:00Z'),
-  ('Alfie Palmer', 'Zak', 'zak', 5000, 0, 'Elite', 'manual', 'stripe', 'active', '2026-03-19T10:00:00Z'),
-  ('Charlie Stevens', 'Zak', 'zak', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-23T10:00:00Z');
-
--- Joe's deals
-INSERT INTO deals (client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status, created_at)
-VALUES
-  ('Will Simpson', 'Joe', 'joe', 1000, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-02T10:00:00Z'),
-  ('Jack Henderson', 'Joe', 'joe', 2000, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-06T10:00:00Z'),
-  ('Freddie Cole', 'Joe', 'joe', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-10T10:00:00Z'),
-  ('Archie Dixon', 'Joe', 'joe', 3000, 300, 'Pro', 'manual', 'stripe', 'active', '2026-03-14T10:00:00Z'),
-  ('Henry Russell', 'Joe', 'joe', 1500, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-19T10:00:00Z'),
-  ('Theo Marshall', 'Joe', 'joe', 500, 175, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-23T10:00:00Z');
-
--- Shea's deals
-INSERT INTO deals (client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status, created_at)
-VALUES
-  ('Declan Murray', 'Shea', 'shea', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-03T10:00:00Z'),
-  ('Sean Kelly', 'Shea', 'shea', 2000, 250, 'Pro', 'manual', 'stripe', 'active', '2026-03-07T10:00:00Z'),
-  ('Ciaran Walsh', 'Shea', 'shea', 1000, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-12T10:00:00Z'),
-  ('Patrick Doyle', 'Shea', 'shea', 500, 175, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-17T10:00:00Z'),
-  ('Ronan Quinn', 'Shea', 'shea', 3000, 300, 'Pro', 'manual', 'stripe', 'active', '2026-03-22T10:00:00Z');
-
--- Chris's deals
-INSERT INTO deals (client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status, created_at)
-VALUES
-  ('Mike Thornton', 'Chris', 'chris', 1500, 200, 'Mechanical Mastery', 'manual', 'stripe', 'active', '2026-03-02T10:00:00Z'),
-  ('Ashley Reed', 'Chris', 'chris', 500, 150, 'Kickstarter', 'manual', 'stripe', 'active', '2026-03-08T10:00:00Z'),
-  ('Jordan Watts', 'Chris', 'chris', 2500, 275, 'Pro', 'manual', 'stripe', 'active', '2026-03-15T10:00:00Z'),
-  ('Rob Pearson', 'Chris', 'chris', 5000, 0, 'Elite', 'manual', 'stripe', 'active', '2026-03-26T10:00:00Z');
-
--- ============================================================
--- STEP 3: Insert Payment Plans (for deals with monthly_amount > 0)
--- ============================================================
-
--- We create payment plans linked by client_name lookup
--- Each plan: 12 months total, first payment = front_end already collected
-
--- Lloyd's payment plans
-INSERT INTO payment_plans (deal_id, client_name, closer_id, monthly_amount, total_value, total_collected, months_remaining, next_due_date, status)
-SELECT d.id, d.client_name, d.closer_id, d.monthly_amount,
-  d.front_end + (d.monthly_amount * 12),
-  d.front_end,
-  12,
-  (d.created_at::date + interval '1 month')::date,
-  CASE
-    WHEN (d.created_at::date + interval '1 month')::date < CURRENT_DATE THEN 'overdue'
-    WHEN (d.created_at::date + interval '1 month')::date <= CURRENT_DATE + interval '5 days' THEN 'due_soon'
-    ELSE 'active'
-  END
-FROM deals d
-WHERE d.monthly_amount > 0
-  AND d.source = 'manual'
-  AND d.created_at >= '2026-03-01'
-  AND d.created_at < '2026-04-01'
-  AND NOT EXISTS (
-    SELECT 1 FROM payment_plans pp WHERE pp.deal_id = d.id
-  );
+-- Summary: 48 unique deals, 43 payment plans, 5 PIF deals
+-- Closers found: chris, dave, joe, lloyd, shea, zak
