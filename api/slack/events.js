@@ -1,11 +1,14 @@
-import { verifySlackSignature, getRawBody } from '../_lib/verify-slack.js';
-import { getSupabaseAdmin } from '../_lib/supabase.js';
-import { matchCloserByName } from '../_lib/closers.js';
-import { isDealMessage, parseDealMessage } from '../_lib/parse-deal.js';
-import { isEodMessage, parseEodReport } from '../_lib/parse-eod.js';
-
 // Disable Vercel's default body parser so we can read the raw body for signature verification
 export const config = { api: { bodyParser: false } };
+
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -17,15 +20,28 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, skipped: 'retry' });
   }
 
+  let rawBody;
+  let body;
   try {
-    const rawBody = await getRawBody(req);
-    const body = JSON.parse(rawBody);
+    rawBody = await readRawBody(req);
+    body = JSON.parse(rawBody);
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
 
-    // Handle Slack URL verification challenge (sent during app setup)
-    if (body.type === 'url_verification') {
-      return res.status(200).json({ challenge: body.challenge });
-    }
+  // Handle Slack URL verification challenge FIRST (no signature check needed)
+  if (body.type === 'url_verification') {
+    return res.status(200).json({ challenge: body.challenge });
+  }
 
+  // Lazy-load modules only after challenge is handled
+  const { verifySlackSignature } = await import('../_lib/verify-slack.js');
+  const { getSupabaseAdmin } = await import('../_lib/supabase.js');
+  const { matchCloserByName } = await import('../_lib/closers.js');
+  const { isDealMessage, parseDealMessage } = await import('../_lib/parse-deal.js');
+  const { isEodMessage, parseEodReport } = await import('../_lib/parse-eod.js');
+
+  try {
     // Verify Slack signature
     const timestamp = req.headers['x-slack-request-timestamp'];
     const signature = req.headers['x-slack-signature'];
@@ -48,15 +64,15 @@ export default async function handler(req, res) {
     const eodChannel = process.env.SLACK_CHANNEL_EOD;
 
     // Resolve Slack user ID to real name for closer matching
-    const closer = await resolveCloser(event.user);
+    const closer = await resolveCloser(event.user, matchCloserByName);
 
     if (channel === salesChannel && isDealMessage(text)) {
-      await handleDealMessage(text, closer, messageTs);
+      await handleDealMessage(text, closer, messageTs, getSupabaseAdmin, parseDealMessage);
       return res.status(200).json({ ok: true, type: 'deal' });
     }
 
     if (channel === eodChannel && isEodMessage(text)) {
-      await handleEodMessage(text, closer, messageTs);
+      await handleEodMessage(text, closer, messageTs, getSupabaseAdmin, parseEodReport);
       return res.status(200).json({ ok: true, type: 'eod' });
     }
 
@@ -68,7 +84,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function resolveCloser(slackUserId) {
+async function resolveCloser(slackUserId, matchCloserByName) {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token || !slackUserId) {
     return matchCloserByName('');
@@ -90,7 +106,7 @@ async function resolveCloser(slackUserId) {
   return matchCloserByName('');
 }
 
-async function handleDealMessage(text, closer, messageTs) {
+async function handleDealMessage(text, closer, messageTs, getSupabaseAdmin, parseDealMessage) {
   const supabase = getSupabaseAdmin();
 
   // Deduplicate: check if we already have a deal from this Slack message
@@ -124,7 +140,7 @@ async function handleDealMessage(text, closer, messageTs) {
   }
 }
 
-async function handleEodMessage(text, closer, messageTs) {
+async function handleEodMessage(text, closer, messageTs, getSupabaseAdmin, parseEodReport) {
   const supabase = getSupabaseAdmin();
 
   // Deduplicate: check if we already have EOD calls from this Slack message
