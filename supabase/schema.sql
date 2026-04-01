@@ -10,7 +10,7 @@ create table if not exists deals (
   created_at timestamptz default now(),
   client_name text not null,
   closer_name text not null,
-  closer_id text not null check (closer_id in ('lloyd','dave','zak','joe')),
+  closer_id text not null check (closer_id in ('lloyd','dave','zak','joe','shea','chris')),
   front_end numeric not null default 0,
   monthly_amount numeric not null default 0,
   programme text not null check (programme in ('Kickstarter','Mechanical Mastery','Pro','Elite')),
