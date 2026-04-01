@@ -1,12 +1,22 @@
--- WeTrade Historical Data Import -- March 2026
+-- Unique clients: 48
+-- PIF deals: 5
+-- PP deals (with payment plans): 43
+-- WeTrade Historical Data Import
 -- Run in Supabase SQL Editor
 
--- Step 1: Allow new closers (shea, chris)
+-- Step 0: Clear existing data
+DELETE FROM payment_receipts;
+DELETE FROM payment_plans;
+DELETE FROM eod_calls;
+DELETE FROM fathom_calls;
+DELETE FROM deals;
+
+-- Step 1: Update closer constraint
 ALTER TABLE deals DROP CONSTRAINT IF EXISTS deals_closer_id_check;
 ALTER TABLE deals ADD CONSTRAINT deals_closer_id_check
   CHECK (closer_id IN ('lloyd','dave','zak','joe','shea','chris'));
 
--- Step 2: Insert deals
+-- Step 2: Insert deals (one per unique client)
 INSERT INTO deals (created_at, client_name, closer_name, closer_id, front_end, monthly_amount, programme, source, payment_method, status) VALUES
   ('2025-11-28', 'Steven Taylor-Smith', 'Lloyd', 'lloyd', 1000.0, 1000.0, 'Pro', 'manual', 'stripe', 'active'),
   ('2025-01-20', 'Rosie Hunt', 'Lloyd', 'lloyd', 500.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
@@ -55,15 +65,15 @@ INSERT INTO deals (created_at, client_name, closer_name, closer_id, front_end, m
   ('2026-03-31', 'Layton Robinson', 'Dave', 'dave', 2000.0, 500.0, 'Pro', 'manual', 'stripe', 'active'),
   ('2026-03-31', 'Stuart Crane', 'Dave', 'dave', 1500.0, 700.0, 'Pro', 'manual', 'stripe', 'active'),
   ('2026-04-01', 'Julian Boden', 'Lloyd', 'lloyd', 5000.0, 0, 'Kickstarter', 'manual', 'stripe', 'active'),
-  ('2025-12-19', 'Samson Habte', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active');
+  ('2026-04-01', 'Samson Habte', 'Zak', 'zak', 500.0, 500.0, 'Kickstarter', 'manual', 'stripe', 'active');
 
--- Step 3: Insert payment plans
+-- Step 3: Insert payment plans (PP clients only)
 INSERT INTO payment_plans (client_name, closer_id, monthly_amount, total_value, total_collected, months_remaining, next_due_date, status, last_payment_date, last_payment_confirmed) VALUES
   ('Steven Taylor-Smith', 'lloyd', 1000.0, 8000.0, 7000.0, 1, '2026-04-27', 'active', '2026-03-27', true),
   ('Rosie Hunt', 'lloyd', 500.0, 8000.0, 6500.0, 3, '2026-04-27', 'active', '2026-03-27', true),
   ('Car', 'lloyd', 500.0, 8000.0, 4000.0, 4, '2026-05-01', 'active', '2026-04-01', true),
-  ('Ahmet Eker', 'lloyd', 500.0, 8000.0, 7000.0, 2, '2026-04-30', 'active', '2026-03-30', true),
-  ('Glyn Huges', 'shea', 1000.0, 5000.0, 1000.0, 4, '2026-04-03', 'active', '2026-03-03', true),
+  ('Ahmet Eker', 'lloyd', 500.0, 8000.0, 7000.0, 2, '2026-04-28', 'active', '2026-03-30', true),
+  ('Glyn Huges', 'shea', 1000.0, 5000.0, 2000.0, 3, '2026-04-03', 'active', '2026-03-03', true),
   ('Julie Miller', 'zak', 500.0, 5000.0, 2500.0, 5, '2026-04-03', 'active', '2026-03-03', true),
   ('Adam Kyriacou', 'zak', 1000.0, 5000.0, 4000.0, 1, '2026-04-03', 'active', '2026-03-03', true),
   ('Suvanne southgate', 'zak', 1000.0, 8000.0, 6000.0, 2, '2026-04-04', 'active', '2026-03-04', true),
@@ -88,7 +98,7 @@ INSERT INTO payment_plans (client_name, closer_id, monthly_amount, total_value, 
   ('Robin Taylor', 'lloyd', 500.0, 5000.0, 3000.0, 4, '2026-04-18', 'active', '2026-03-18', true),
   ('Adrian Lockstone', 'chris', 1000.0, 5000.0, 2000.0, 3, '2026-04-18', 'active', '2026-03-18', true),
   ('Robert Goodfellow', 'lloyd', 400.0, 8000.0, 5400.0, 1, '2026-04-23', 'active', '2026-03-23', true),
-  ('Tim Canning', 'zak', 1000.0, 8000.0, 2000.0, 6, '2026-04-23', 'active', '2026-03-23', true),
+  ('Tim Canning', 'zak', 1000.0, 8000.0, 4000.0, 4, '2026-04-23', 'active', '2026-03-23', true),
   ('Oskar Winberg', 'dave', 500.0, 5000.0, 4000.0, 2, '2026-04-25', 'active', '2026-03-25', true),
   ('Annenilan Arulgnanaseelan', 'dave', 500.0, 5000.0, 4500.0, 1, '2026-04-26', 'active', '2026-03-26', true),
   ('Ryan Newson', 'dave', 250.0, 5000.0, 4250.0, 3, '2026-04-27', 'active', '2026-03-27', true),
@@ -98,10 +108,9 @@ INSERT INTO payment_plans (client_name, closer_id, monthly_amount, total_value, 
   ('Nicholas Hubbard', 'zak', 1000.0, 8000.0, 5000.0, 3, '2026-04-27', 'active', '2026-03-27', true),
   ('M Hassen', 'zak', 250.0, 5000.0, 2500.0, 10, '2026-04-28', 'active', '2026-03-28', true),
   ('Issac Cheung', 'shea', 1000.0, 5000.0, 4000.0, 1, '2026-04-28', 'active', '2026-03-28', true),
-  ('Paul Rudkowskyj', 'dave', 1500.0, 8000.0, 6500.0, 1, '2026-04-29', 'active', '2026-03-29', true),
+  ('Paul Rudkowskyj', 'dave', 1500.0, 8000.0, 6500.0, 1, '2026-04-28', 'active', '2026-03-29', true),
   ('Layton Robinson', 'dave', 500.0, 5000.0, 2000.0, 6, '2026-04-28', 'active', '2026-03-31', true),
   ('Stuart Crane', 'dave', 700.0, 5000.0, 1500.0, 5, '2026-04-28', 'active', '2026-03-31', true),
   ('Samson Habte', 'zak', 500.0, 5000.0, 2500.0, 5, '2026-05-01', 'active', '2026-04-01', true);
 
 -- Summary: 48 unique deals, 43 payment plans, 5 PIF deals
--- Closers found: chris, dave, joe, lloyd, shea, zak
