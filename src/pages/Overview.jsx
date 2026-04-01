@@ -21,7 +21,7 @@ import useDateRange from '../hooks/useDateRange';
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function Overview() {
-  const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange } = useDateRange('this_month');
+  const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -172,6 +172,10 @@ export default function Overview() {
         presets={presets}
         compareEnabled={compareEnabled}
         setCompareEnabled={setCompareEnabled}
+        customStart={customStart}
+        customEnd={customEnd}
+        setCustomStart={setCustomStart}
+        setCustomEnd={setCustomEnd}
       />
 
       {/* Overdue alert banner */}

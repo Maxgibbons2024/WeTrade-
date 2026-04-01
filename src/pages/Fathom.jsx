@@ -26,7 +26,7 @@ function formatTime(seconds) {
 }
 
 export default function Fathom() {
-  const { preset, setPreset, presets, dateRange } = useDateRange('this_month');
+  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
   const { data: fathomCalls, loading, error } = useQuery('fathom_calls', {
     order: { column: 'call_date', ascending: false },
   });
@@ -132,7 +132,7 @@ export default function Fathom() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Fathom</h2>
 
-      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} customStart={customStart} customEnd={customEnd} setCustomStart={setCustomStart} setCustomEnd={setCustomEnd} />
 
       {/* Per-closer stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

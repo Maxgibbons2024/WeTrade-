@@ -12,7 +12,7 @@ import { formatCurrency, formatDate, isInDateRange } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
 export default function PaymentPlans() {
-  const { preset, setPreset, presets, dateRange } = useDateRange('all');
+  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
   const [tab, setTab] = useState('plans');
 
   const { data: plans, loading, error, refetch } = useQuery('payment_plans', {
@@ -221,7 +221,7 @@ export default function PaymentPlans() {
 
       {tab === 'plans' && (
         <>
-          <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+          <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} customStart={customStart} customEnd={customEnd} setCustomStart={setCustomStart} setCustomEnd={setCustomEnd} />
           <SortableTable
             columns={columns}
             data={filteredPlans}

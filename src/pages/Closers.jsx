@@ -22,7 +22,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 export default function Closers() {
   const [filter, setFilter] = useState('all');
-  const { preset, setPreset, presets, dateRange } = useDateRange('this_month');
+  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
   const { data: eodCalls, loading: el, error: ee } = useQuery('eod_calls');
@@ -164,7 +164,7 @@ export default function Closers() {
         </div>
       </div>
 
-      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} customStart={customStart} customEnd={customEnd} setCustomStart={setCustomStart} setCustomEnd={setCustomEnd} />
 
       {/* Closer cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

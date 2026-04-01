@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 
 const PRESETS = {
   this_week: 'This Week',
@@ -7,6 +7,7 @@ const PRESETS = {
   last_30: 'Last 30 Days',
   last_90: 'Last 90 Days',
   all: 'All Time',
+  custom: 'Custom',
 };
 
 function getMonday(d) {
@@ -67,13 +68,30 @@ function calcCompareRange(dateRange) {
 export default function useDateRange(defaultPreset = 'this_month') {
   const [preset, setPreset] = useState(defaultPreset);
   const [compareEnabled, setCompareEnabled] = useState(false);
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
 
-  const dateRange = useMemo(() => calcRange(preset), [preset]);
+  const dateRange = useMemo(() => {
+    if (preset === 'custom' && customStart) {
+      const start = new Date(customStart);
+      start.setHours(0, 0, 0, 0);
+      const end = customEnd ? new Date(customEnd) : new Date(customStart);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    return calcRange(preset);
+  }, [preset, customStart, customEnd]);
 
   const compareRange = useMemo(() => {
     if (!compareEnabled) return null;
     return calcCompareRange(dateRange);
   }, [dateRange, compareEnabled]);
+
+  const setCustomRange = useCallback((start, end) => {
+    setCustomStart(start);
+    setCustomEnd(end);
+    setPreset('custom');
+  }, []);
 
   return {
     preset,
@@ -83,5 +101,10 @@ export default function useDateRange(defaultPreset = 'this_month') {
     setCompareEnabled,
     compareRange,
     presets: PRESETS,
+    customStart,
+    customEnd,
+    setCustomStart,
+    setCustomEnd,
+    setCustomRange,
   };
 }
