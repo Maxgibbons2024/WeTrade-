@@ -9,6 +9,8 @@ const CLOSER_MAP = {
   dave: { id: 'dave', name: 'Dave' },
   zak: { id: 'zak', name: 'Zak' },
   joe: { id: 'joe', name: 'Joe' },
+  shea: { id: 'shea', name: 'Shea' },
+  chris: { id: 'chris', name: 'Chris' },
 };
 
 function matchCloser(name) {

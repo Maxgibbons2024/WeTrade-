@@ -3,6 +3,8 @@ export const CLOSERS = [
   { id: 'dave', name: 'Dave', initials: 'DV', color: '#F59E0B' },
   { id: 'zak', name: 'Zak', initials: 'ZK', color: '#10B981' },
   { id: 'joe', name: 'Joe', initials: 'JO', color: '#8B5CF6' },
+  { id: 'shea', name: 'Shea', initials: 'SH', color: '#EC4899' },
+  { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316' },
 ];
 
 export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite'];
