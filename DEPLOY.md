@@ -68,35 +68,20 @@ git push origin main
 2. Click **Add New → Project**
 3. Import your GitHub repository
 4. Framework Preset will auto-detect **Vite**
-5. Add environment variables:
+5. Add environment variables (see `.env.example` for the full list):
    - `VITE_SUPABASE_URL` → your Supabase project URL
    - `VITE_SUPABASE_ANON_KEY` → your Supabase anon key
+   - `SUPABASE_URL` → same URL (for server-side API routes)
+   - `SUPABASE_SERVICE_ROLE_KEY` → from Supabase Settings → API
+   - Plus Slack and Fathom vars (see `API_SETUP.md`)
 6. Click **Deploy**
 7. Your dashboard will be live at `https://your-project.vercel.app`
 
-## 7. Set Up Supabase Auth (Required for RLS)
+## 7. Set Up Integrations
 
-Since Row Level Security requires authenticated users:
-
-1. Go to **Authentication → Providers** in Supabase
-2. Enable **Email** provider (or any provider you prefer)
-3. Create a user account for your team
-4. OR — for simpler setup, you can temporarily adjust RLS policies to allow public access:
-
-```sql
--- Replace the existing policies with these for public access (development only):
-drop policy if exists "Authenticated users full access on deals" on deals;
-create policy "Public access on deals" on deals for all using (true) with check (true);
-
--- Repeat for each table...
-```
-
-**For production**, implement proper authentication in the app.
-
-## 8. Set Up Integrations
-
-- Follow `ZAPIER_SETUP.md` for Slack → Supabase automation
-- Follow `FATHOM_SETUP.md` for Fathom call tracking integration
+Follow `API_SETUP.md` for complete step-by-step instructions to set up:
+- **Slack** — auto-captures deals and EOD reports from your Slack channels
+- **Fathom** — daily sync of call data from Fathom (runs automatically via Vercel Cron)
 
 ## Troubleshooting
 
