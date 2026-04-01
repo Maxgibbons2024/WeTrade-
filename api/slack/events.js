@@ -51,12 +51,47 @@ function verifySignature(rawBody, timestamp, signature) {
   }
 }
 
-// ---- Deal message parsing ----
+// ---- Deal message detection (multi-signal scoring) ----
 function isDealMessage(text) {
   if (!text) return false;
-  return text.includes(' - ') && /p\/m|down|upfront|paid/i.test(text);
+  const lower = text.toLowerCase();
+
+  // NEGATIVE FILTERS — reject known non-deal patterns
+  if (lower.includes('leaderboard') || lower.includes('scoreboard')) return false;
+  if (lower.includes(':trophy:') || lower.includes(':moneybag:') || lower.includes(':medal:')) return false;
+  if (lower.includes(':first_place_medal:') || lower.includes(':second_place_medal:') || lower.includes(':third_place_medal:')) return false;
+  if (lower.includes('daily update') || lower.includes('weekly update')) return false;
+  // Reject messages with 5+ "Name - Value" lines (leaderboard pattern)
+  const dashLines = (text.match(/ - /g) || []).length;
+  if (dashLines >= 5) return false;
+  // Reject percentage values (show rate lines)
+  if (/\d+\.\d+%/.test(text)) return false;
+
+  // Must contain " - " delimiter (client name - details pattern)
+  if (!text.includes(' - ')) return false;
+
+  // The part before the first dash should look like a client name
+  const dashIndex = text.indexOf(' - ');
+  const beforeDash = text.substring(0, dashIndex).trim();
+  // Must start with a letter, be 2-50 chars, no emoji colons
+  if (!/^[A-Za-z]/.test(beforeDash) || beforeDash.length < 2 || beforeDash.length > 50) return false;
+  if (beforeDash.includes(':')) return false;
+
+  const afterDash = text.substring(dashIndex + 3);
+
+  // POSITIVE SIGNALS — require at least 2
+  let signals = 0;
+  if (/£\s*\d{1,6}(?:,\d{3})*(?:\.\d{2})?/.test(afterDash)) signals++;
+  if (/\d+(?:\.\d+)?\s*k\b/i.test(afterDash)) signals++;
+  if (/p\/m|per\s*month|\/mo|monthly/i.test(afterDash)) signals++;
+  if (/(?:down|upfront)\s*/i.test(afterDash)) signals++;
+  if (/\b(?:Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i.test(afterDash)) signals++;
+  if (/paid/i.test(afterDash) && /[£\d]/.test(afterDash)) signals++;
+
+  return signals >= 2;
 }
 
+// ---- Deal message parsing ----
 function parseDeal(text) {
   const dashIndex = text.indexOf(' - ');
   if (dashIndex < 0) return null;
@@ -73,6 +108,9 @@ function parseDeal(text) {
   let monthlyAmount = 0;
   const moMatch = details.match(/(\d+(?:\.\d+)?)\s*(?:p\/m|per\s*month|\/mo|monthly)/i);
   if (moMatch) monthlyAmount = parseFloat(moMatch[1]);
+
+  // Reject if no financial data extracted
+  if (frontEnd === 0 && monthlyAmount === 0) return null;
 
   let programme = 'Kickstarter';
   const progMatch = details.match(/\b(Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i);
@@ -146,6 +184,19 @@ function parseEod(text) {
   return calls;
 }
 
+// ---- Payment notification parsing ----
+// Format: "True £5000.00 Julian Boden" or "False £500.00 John Smith"
+function parsePaymentNotification(text) {
+  if (!text) return null;
+  const match = text.match(/^(True|False)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+(.+)$/i);
+  if (!match) return null;
+  return {
+    success: match[1].toLowerCase() === 'true',
+    amount: parseFloat(match[2].replace(/,/g, '')),
+    client_name: match[3].trim(),
+  };
+}
+
 // ---- Main handler ----
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -182,6 +233,78 @@ export default async function handler(req, res) {
     const channel = event.channel;
     const text = event.text || '';
     const messageTs = event.ts || '';
+
+    // --- Payment notification channel ---
+    if (channel === process.env.SLACK_CHANNEL_DEALS) {
+      const payment = parsePaymentNotification(text);
+      if (!payment) {
+        return res.status(200).json({ ok: true, ignored: 'not a payment notification' });
+      }
+
+      const supabase = getSupabase();
+
+      // Dedup
+      const { data: existing } = await supabase
+        .from('payment_receipts')
+        .select('id')
+        .eq('slack_message_ts', messageTs)
+        .limit(1);
+      if (existing && existing.length > 0) {
+        return res.status(200).json({ ok: true, skipped: 'duplicate' });
+      }
+
+      // Try to match against active payment plans
+      const { data: matchedPlans } = await supabase
+        .from('payment_plans')
+        .select('id, client_name, monthly_amount, total_collected, total_value, months_remaining, next_due_date')
+        .neq('status', 'completed')
+        .ilike('client_name', `%${payment.client_name}%`);
+
+      let paymentPlanId = null;
+      let matched = false;
+
+      if (matchedPlans && matchedPlans.length === 1) {
+        const plan = matchedPlans[0];
+        paymentPlanId = plan.id;
+        matched = true;
+
+        // Update the payment plan
+        const newCollected = Number(plan.total_collected) + payment.amount;
+        const newMonthsRemaining = Math.max(0, plan.months_remaining - 1);
+        const nextDue = new Date(plan.next_due_date);
+        nextDue.setMonth(nextDue.getMonth() + 1);
+        const today = new Date().toISOString().split('T')[0];
+
+        let newStatus = 'active';
+        if (newMonthsRemaining === 0 || newCollected >= Number(plan.total_value)) {
+          newStatus = 'completed';
+        }
+
+        await supabase.from('payment_plans').update({
+          total_collected: newCollected,
+          months_remaining: newMonthsRemaining,
+          next_due_date: nextDue.toISOString().split('T')[0],
+          last_payment_date: today,
+          last_payment_confirmed: true,
+          status: newStatus,
+        }).eq('id', plan.id);
+      }
+
+      // Insert receipt
+      await supabase.from('payment_receipts').insert([{
+        client_name: payment.client_name,
+        amount: payment.amount,
+        success: payment.success,
+        payment_plan_id: paymentPlanId,
+        slack_message_ts: messageTs,
+        raw_text: text,
+        matched,
+      }]);
+
+      return res.status(200).json({ ok: true, type: 'payment_receipt', matched });
+    }
+
+    // --- Sales team chat (deals) ---
     const closer = await resolveCloser(event.user);
 
     if (channel === process.env.SLACK_CHANNEL_SALES && isDealMessage(text)) {
@@ -203,28 +326,33 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, type: 'deal' });
     }
 
+    // --- EOD reports ---
     if (channel === process.env.SLACK_CHANNEL_EOD && isEodMessage(text)) {
       const supabase = getSupabase();
-      const { data: existing } = await supabase.from('eod_calls').select('id').eq('slack_message_ts', messageTs).limit(1);
+      const { data: existing } = await supabase
+        .from('eod_calls')
+        .select('id')
+        .eq('slack_message_ts', messageTs)
+        .limit(1);
       if (existing && existing.length > 0) return res.status(200).json({ ok: true, skipped: 'duplicate' });
 
       const calls = parseEod(text);
-      if (calls.length > 0) {
-        const today = new Date().toISOString().split('T')[0];
-        await supabase.from('eod_calls').insert(
-          calls.map((call) => ({
-            report_date: today,
-            closer_id: closer.id,
-            closer_name: closer.name,
-            client_name: call.client_name,
-            outcome: call.outcome,
-            deal_value: call.deal_value,
-            notes: call.notes,
-            slack_message_ts: messageTs,
-            raw_text: call.raw_text,
-          }))
-        );
-      }
+      if (calls.length === 0) return res.status(200).json({ ok: true, ignored: 'no calls parsed' });
+
+      const today = new Date().toISOString().split('T')[0];
+      const rows = calls.map((call) => ({
+        report_date: today,
+        closer_id: closer.id,
+        closer_name: closer.name,
+        client_name: call.client_name,
+        outcome: call.outcome,
+        deal_value: call.deal_value,
+        notes: call.notes,
+        slack_message_ts: messageTs,
+        raw_text: call.raw_text,
+      }));
+
+      await supabase.from('eod_calls').insert(rows);
       return res.status(200).json({ ok: true, type: 'eod' });
     }
 
@@ -238,16 +366,19 @@ export default async function handler(req, res) {
 async function resolveCloser(slackUserId) {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token || !slackUserId) return matchCloser('');
+
   try {
     const resp = await fetch(`https://slack.com/api/users.info?user=${slackUserId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await resp.json();
     if (data.ok && data.user) {
-      return matchCloser(data.user.real_name || data.user.profile?.real_name || data.user.name || '');
+      const realName = data.user.real_name || data.user.profile?.real_name || data.user.name || '';
+      return matchCloser(realName);
     }
   } catch (err) {
     console.error('Failed to resolve Slack user:', err);
   }
+
   return matchCloser('');
 }

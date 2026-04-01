@@ -8,13 +8,14 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import MetricCard from '../components/MetricCard';
 import CloserAvatar from '../components/CloserAvatar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import SortableTable from '../components/SortableTable';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery } from '../hooks/useSupabase';
-import { CLOSERS, formatDate, getMonthStart } from '../lib/constants';
+import { CLOSERS, formatDate, isInDateRange } from '../lib/constants';
+import useDateRange from '../hooks/useDateRange';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -25,27 +26,28 @@ function formatTime(seconds) {
 }
 
 export default function Fathom() {
-  const monthStart = useMemo(() => getMonthStart(), []);
+  const { preset, setPreset, presets, dateRange } = useDateRange('this_month');
   const { data: fathomCalls, loading, error } = useQuery('fathom_calls', {
     order: { column: 'call_date', ascending: false },
   });
 
+  const rangeCalls = useMemo(() => fathomCalls.filter((f) => isInDateRange(f.call_date, dateRange.start, dateRange.end)), [fathomCalls, dateRange]);
+
   // Per-closer stats
   const closerStats = useMemo(() => {
     return CLOSERS.map((closer) => {
-      const calls = fathomCalls.filter((f) => f.closer_id === closer.id);
-      const mtdCalls = calls.filter((f) => new Date(f.call_date) >= new Date(monthStart));
-      const totalCalls = mtdCalls.length;
-      const totalTalkTime = mtdCalls.reduce((sum, f) => sum + (f.talk_time_seconds || 0), 0);
+      const calls = rangeCalls.filter((f) => f.closer_id === closer.id);
+      const totalCalls = calls.length;
+      const totalTalkTime = calls.reduce((sum, f) => sum + (f.talk_time_seconds || 0), 0);
       const avgDuration = totalCalls > 0
-        ? Math.round(mtdCalls.reduce((sum, f) => sum + (f.duration_seconds || 0), 0) / totalCalls)
+        ? Math.round(calls.reduce((sum, f) => sum + (f.duration_seconds || 0), 0) / totalCalls)
         : 0;
-      const noShows = mtdCalls.filter((f) => f.no_show).length;
+      const noShows = calls.filter((f) => f.no_show).length;
       const noShowRate = totalCalls > 0 ? Math.round((noShows / totalCalls) * 100) : 0;
 
       return { ...closer, totalCalls, totalTalkTime, avgDuration, noShows, noShowRate };
     });
-  }, [fathomCalls, monthStart]);
+  }, [rangeCalls]);
 
   // Weekly chart (last 8 weeks, stacked bar of calls per closer)
   const chartData = useMemo(() => {
@@ -130,6 +132,8 @@ export default function Fathom() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Fathom</h2>
 
+      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+
       {/* Per-closer stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {closerStats.map((stat) => (
@@ -173,7 +177,7 @@ export default function Fathom() {
       {/* Call log table */}
       <div>
         <h3 className="text-sm font-medium text-gray-400 mb-3">Call Log</h3>
-        <SortableTable columns={callColumns} data={fathomCalls} defaultSort={{ column: 'call_date', ascending: false }} />
+        <SortableTable columns={callColumns} data={rangeCalls} defaultSort={{ column: 'call_date', ascending: false }} />
       </div>
     </div>
   );

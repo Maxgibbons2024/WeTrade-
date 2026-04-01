@@ -11,16 +11,18 @@ import {
 import { Line } from 'react-chartjs-2';
 import MetricCard from '../components/MetricCard';
 import CloserAvatar from '../components/CloserAvatar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery } from '../hooks/useSupabase';
-import { CLOSERS, formatCurrency, getMonthStart, getCloser } from '../lib/constants';
+import { CLOSERS, formatCurrency, isInDateRange } from '../lib/constants';
+import useDateRange from '../hooks/useDateRange';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 export default function Closers() {
   const [filter, setFilter] = useState('all');
-  const monthStart = useMemo(() => getMonthStart(), []);
+  const { preset, setPreset, presets, dateRange } = useDateRange('this_month');
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
   const { data: eodCalls, loading: el, error: ee } = useQuery('eod_calls');
@@ -33,43 +35,41 @@ export default function Closers() {
   const closerStats = useMemo(() => {
     return CLOSERS.map((closer) => {
       const closerDeals = deals.filter((d) => d.closer_id === closer.id);
-      const mtdDeals = closerDeals.filter((d) => new Date(d.created_at) >= new Date(monthStart));
-      const mtdEod = eodCalls.filter((c) => c.closer_id === closer.id && new Date(c.report_date) >= new Date(monthStart));
+      const rangeDeals = closerDeals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end));
+      const rangeEod = eodCalls.filter((c) => c.closer_id === closer.id && isInDateRange(c.report_date, dateRange.start, dateRange.end));
       const closerPlans = paymentPlans.filter((p) => p.closer_id === closer.id);
-      const closerFathom = fathomCalls.filter((f) => f.closer_id === closer.id);
-      const mtdFathom = closerFathom.filter((f) => new Date(f.call_date) >= new Date(monthStart));
+      const rangeFathom = fathomCalls.filter((f) => f.closer_id === closer.id && isInDateRange(f.call_date, dateRange.start, dateRange.end));
 
-      const totalCalls = mtdEod.length;
-      const noShows = mtdEod.filter((c) => c.outcome === 'no_show').length;
+      const totalCalls = rangeEod.length;
+      const noShows = rangeEod.filter((c) => c.outcome === 'no_show').length;
       const showRate = totalCalls > 0 ? Math.round(((totalCalls - noShows) / totalCalls) * 100) : 0;
 
-      const mtdRevenue = mtdDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
-      const totalCollected = mtdRevenue + closerPlans.reduce((sum, p) => sum + Number(p.total_collected || 0), 0);
-      const closesCount = mtdDeals.length;
-      const avgDealSize = closesCount > 0 ? Math.round(mtdRevenue / closesCount) : 0;
-      const noShowCount = noShows;
+      const rangeRevenue = rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+      const totalCollected = rangeRevenue + closerPlans.reduce((sum, p) => sum + Number(p.total_collected || 0), 0);
+      const closesCount = rangeDeals.length;
+      const avgDealSize = closesCount > 0 ? Math.round(rangeRevenue / closesCount) : 0;
 
-      const fathomTotalCalls = mtdFathom.length;
-      const fathomTotalTalkTime = mtdFathom.reduce((sum, f) => sum + (f.talk_time_seconds || 0), 0);
+      const fathomTotalCalls = rangeFathom.length;
+      const fathomTotalTalkTime = rangeFathom.reduce((sum, f) => sum + (f.talk_time_seconds || 0), 0);
       const fathomAvgDuration = fathomTotalCalls > 0
-        ? Math.round(mtdFathom.reduce((sum, f) => sum + (f.duration_seconds || 0), 0) / fathomTotalCalls)
+        ? Math.round(rangeFathom.reduce((sum, f) => sum + (f.duration_seconds || 0), 0) / fathomTotalCalls)
         : 0;
 
       return {
         ...closer,
         showRate,
-        mtdRevenue,
+        mtdRevenue: rangeRevenue,
         totalCollected,
         closesCount,
         avgDealSize,
-        noShowCount,
+        noShowCount: noShows,
         totalCalls,
         fathomTotalCalls,
         fathomTotalTalkTime,
         fathomAvgDuration,
       };
     });
-  }, [deals, eodCalls, paymentPlans, fathomCalls, monthStart]);
+  }, [deals, eodCalls, paymentPlans, fathomCalls, dateRange]);
 
   const displayed = filter === 'all' ? closerStats : closerStats.filter((c) => c.id === filter);
 
@@ -164,6 +164,8 @@ export default function Closers() {
         </div>
       </div>
 
+      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+
       {/* Closer cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {displayed.map((stat) => {
@@ -176,7 +178,7 @@ export default function Closers() {
                 <CloserAvatar closerId={stat.id} size="lg" />
                 <div>
                   <h3 className="font-semibold">{stat.name}</h3>
-                  <p className="text-xs text-gray-500">{stat.totalCalls} calls MTD</p>
+                  <p className="text-xs text-gray-500">{stat.totalCalls} calls</p>
                 </div>
               </div>
 
@@ -204,7 +206,7 @@ export default function Closers() {
               {/* Stats grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs text-gray-500">MTD Revenue (FE)</p>
+                  <p className="text-xs text-gray-500">Revenue (FE)</p>
                   <p className="text-sm font-semibold">{formatCurrency(stat.mtdRevenue)}</p>
                 </div>
                 <div>
@@ -216,11 +218,11 @@ export default function Closers() {
                   <p className="text-sm font-semibold">{formatCurrency(stat.avgDealSize)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Closes MTD</p>
+                  <p className="text-xs text-gray-500">Closes</p>
                   <p className="text-sm font-semibold">{stat.closesCount}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">No-shows MTD</p>
+                  <p className="text-xs text-gray-500">No-shows</p>
                   <p className="text-sm font-semibold text-red-400">{stat.noShowCount}</p>
                 </div>
                 <div>

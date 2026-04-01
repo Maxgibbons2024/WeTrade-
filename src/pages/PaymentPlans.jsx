@@ -4,20 +4,36 @@ import MetricCard from '../components/MetricCard';
 import SortableTable from '../components/SortableTable';
 import StatusBadge from '../components/StatusBadge';
 import CloserAvatar from '../components/CloserAvatar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime, updateRow } from '../hooks/useSupabase';
-import { formatCurrency, formatDate } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange } from '../lib/constants';
+import useDateRange from '../hooks/useDateRange';
 
 export default function PaymentPlans() {
+  const { preset, setPreset, presets, dateRange } = useDateRange('all');
+  const [tab, setTab] = useState('plans');
+
   const { data: plans, loading, error, refetch } = useQuery('payment_plans', {
     order: { column: 'next_due_date', ascending: true },
+  });
+
+  const { data: receipts, loading: receiptsLoading, refetch: refetchReceipts } = useQuery('payment_receipts', {
+    order: { column: 'received_at', ascending: false },
   });
 
   const [markingPaid, setMarkingPaid] = useState(null);
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
+  const handleReceiptsRealtime = useCallback(() => { refetchReceipts(); }, [refetchReceipts]);
   useRealtime('payment_plans', handleRealtime);
+  useRealtime('payment_receipts', handleReceiptsRealtime);
+
+  const filteredPlans = useMemo(() => {
+    if (!dateRange.start) return plans;
+    return plans.filter((p) => isInDateRange(p.next_due_date, dateRange.start, dateRange.end));
+  }, [plans, dateRange]);
 
   const activePlans = useMemo(() => plans.filter((p) => p.status !== 'completed'), [plans]);
   const dueThisMonth = useMemo(() => {
@@ -31,6 +47,14 @@ export default function PaymentPlans() {
   const overduePlans = useMemo(() => plans.filter((p) => p.status === 'overdue'), [plans]);
   const pipelineValue = useMemo(() => plans.reduce((sum, p) => sum + (Number(p.total_value) - Number(p.total_collected)), 0), [plans]);
   const overdueTotal = useMemo(() => overduePlans.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [overduePlans]);
+
+  // Receipt metrics
+  const unmatchedReceipts = useMemo(() => (receipts || []).filter((r) => !r.matched), [receipts]);
+  const thisMonthReceipts = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return (receipts || []).filter((r) => new Date(r.received_at) >= monthStart);
+  }, [receipts]);
 
   async function handleMarkPaid(plan) {
     setMarkingPaid(plan.id);
@@ -51,6 +75,7 @@ export default function PaymentPlans() {
         months_remaining: newMonthsRemaining,
         next_due_date: nextDue.toISOString().split('T')[0],
         last_payment_date: today,
+        last_payment_confirmed: true,
         status: newStatus,
       });
 
@@ -96,6 +121,15 @@ export default function PaymentPlans() {
       ),
     },
     { key: 'months_remaining', label: 'Months Left' },
+    {
+      key: 'last_payment_confirmed',
+      label: 'Confirmed',
+      render: (val) => (
+        <span className={`text-xs font-medium ${val ? 'text-green-400' : 'text-gray-600'}`}>
+          {val ? '● Yes' : '○ No'}
+        </span>
+      ),
+    },
     { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val} /> },
     {
       key: 'id',
@@ -117,25 +151,92 @@ export default function PaymentPlans() {
     },
   ];
 
-  if (loading) return <LoadingSpinner />;
+  const receiptColumns = [
+    { key: 'received_at', label: 'Date', render: (val) => formatDate(val) },
+    { key: 'client_name', label: 'Client', render: (val) => <span className="font-medium">{val}</span> },
+    { key: 'amount', label: 'Amount', render: (val) => <span className="text-brand-cyan font-semibold">{formatCurrency(val)}</span> },
+    {
+      key: 'success',
+      label: 'Status',
+      render: (val) => (
+        <span className={`text-xs font-medium ${val ? 'text-green-400' : 'text-red-400'}`}>
+          {val ? 'Success' : 'Failed'}
+        </span>
+      ),
+    },
+    {
+      key: 'matched',
+      label: 'Matched',
+      render: (val) => (
+        <span className={`text-xs font-medium ${val ? 'text-green-400' : 'text-amber-400'}`}>
+          {val ? '● Linked' : '○ Unmatched'}
+        </span>
+      ),
+    },
+  ];
+
+  if (loading || receiptsLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error} />;
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Payment Plans</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <MetricCard title="Active Plans" value={activePlans.length} accent />
         <MetricCard title="Due This Month" value={dueThisMonth.length} subtitle={`${formatCurrency(dueThisMonth.reduce((s, p) => s + Number(p.monthly_amount), 0))} total`} />
         <MetricCard title="Overdue Total" value={formatCurrency(overdueTotal)} danger={overduePlans.length > 0} subtitle={`${overduePlans.length} plan${overduePlans.length !== 1 ? 's' : ''}`} />
         <MetricCard title="Pipeline Value" value={formatCurrency(pipelineValue)} subtitle="Remaining to collect" />
+        <MetricCard
+          title="Confirmed This Month"
+          value={thisMonthReceipts.length}
+          subtitle={unmatchedReceipts.length > 0 ? `${unmatchedReceipts.length} unmatched` : 'All matched'}
+          warning={unmatchedReceipts.length > 0}
+          accent={unmatchedReceipts.length === 0}
+        />
       </div>
 
-      <SortableTable
-        columns={columns}
-        data={plans}
-        defaultSort={{ column: 'next_due_date', ascending: true }}
-      />
+      {/* Tab toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setTab('plans')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'plans' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+          }`}
+        >
+          Payment Plans
+        </button>
+        <button
+          onClick={() => setTab('receipts')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'receipts' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+          }`}
+        >
+          Payment Activity
+          {unmatchedReceipts.length > 0 && (
+            <span className="ml-2 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unmatchedReceipts.length}</span>
+          )}
+        </button>
+      </div>
+
+      {tab === 'plans' && (
+        <>
+          <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+          <SortableTable
+            columns={columns}
+            data={filteredPlans}
+            defaultSort={{ column: 'next_due_date', ascending: true }}
+          />
+        </>
+      )}
+
+      {tab === 'receipts' && (
+        <SortableTable
+          columns={receiptColumns}
+          data={receipts || []}
+          defaultSort={{ column: 'received_at', ascending: false }}
+        />
+      )}
     </div>
   );
 }

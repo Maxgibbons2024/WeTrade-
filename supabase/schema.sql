@@ -35,6 +35,7 @@ create table if not exists payment_plans (
   next_due_date date not null,
   status text not null default 'active' check (status in ('active','overdue','due_soon','completed')),
   last_payment_date date,
+  last_payment_confirmed boolean not null default false,
   notes text
 );
 
@@ -76,6 +77,19 @@ create table if not exists manual_payments (
   added_by text not null
 );
 
+create table if not exists payment_receipts (
+  id uuid primary key default gen_random_uuid(),
+  received_at timestamptz default now(),
+  client_name text not null,
+  amount numeric not null,
+  success boolean not null default true,
+  payment_plan_id uuid references payment_plans(id) on delete set null,
+  deal_id uuid references deals(id) on delete set null,
+  slack_message_ts text,
+  raw_text text,
+  matched boolean not null default false
+);
+
 -- ============================================================
 -- ROW LEVEL SECURITY
 -- ============================================================
@@ -85,6 +99,7 @@ alter table payment_plans enable row level security;
 alter table eod_calls enable row level security;
 alter table fathom_calls enable row level security;
 alter table manual_payments enable row level security;
+alter table payment_receipts enable row level security;
 
 -- Policies: allow all operations for all users (including anon key)
 create policy "Public full access on deals"
@@ -102,12 +117,16 @@ create policy "Public full access on fathom_calls"
 create policy "Public full access on manual_payments"
   on manual_payments for all using (true) with check (true);
 
+create policy "Public full access on payment_receipts"
+  on payment_receipts for all using (true) with check (true);
+
 -- ============================================================
 -- REALTIME
 -- ============================================================
 
 alter publication supabase_realtime add table deals;
 alter publication supabase_realtime add table payment_plans;
+alter publication supabase_realtime add table payment_receipts;
 
 -- ============================================================
 -- CRON: update_payment_plan_status()

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -9,17 +9,19 @@ import {
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 import MetricCard from '../components/MetricCard';
+import DateRangeFilter from '../components/DateRangeFilter';
 import CloserAvatar from '../components/CloserAvatar';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, getMonthStart, CLOSERS, OUTCOME_COLOURS } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, calcDelta, CLOSERS, OUTCOME_COLOURS } from '../lib/constants';
+import useDateRange from '../hooks/useDateRange';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function Overview() {
-  const monthStart = useMemo(() => getMonthStart(), []);
+  const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange } = useDateRange('this_month');
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -39,21 +41,27 @@ export default function Overview() {
   const loading = dealsLoading || plansLoading || eodLoading;
   const error = dealsError || plansError || eodError;
 
-  // MTD metrics
-  const mtdDeals = useMemo(() => deals.filter((d) => new Date(d.created_at) >= new Date(monthStart)), [deals, monthStart]);
-  const mtdCollected = useMemo(() => mtdDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [mtdDeals]);
-  const dealsClosedCount = mtdDeals.length;
+  // Filtered metrics
+  const rangeDeals = useMemo(() => deals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end)), [deals, dateRange]);
+  const rangeCollected = useMemo(() => rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [rangeDeals]);
 
-  // Show rate from EOD calls this month
-  const mtdEod = useMemo(() => eodCalls.filter((c) => new Date(c.report_date) >= new Date(monthStart)), [eodCalls, monthStart]);
-  const totalCalls = mtdEod.length;
-  const noShows = mtdEod.filter((c) => c.outcome === 'no_show').length;
+  const rangeEod = useMemo(() => eodCalls.filter((c) => isInDateRange(c.report_date, dateRange.start, dateRange.end)), [eodCalls, dateRange]);
+  const totalCalls = rangeEod.length;
+  const noShows = rangeEod.filter((c) => c.outcome === 'no_show').length;
   const showRate = totalCalls > 0 ? Math.round(((totalCalls - noShows) / totalCalls) * 100) : 0;
 
-  // Overdue payments
+  // Compare metrics
+  const compareDeals = useMemo(() => compareRange ? deals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [deals, compareRange]);
+  const compareCollected = compareDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+  const compareEod = useMemo(() => compareRange ? eodCalls.filter((c) => isInDateRange(c.report_date, compareRange.start, compareRange.end)) : [], [eodCalls, compareRange]);
+  const compareCalls = compareEod.length;
+  const compareNoShows = compareEod.filter((c) => c.outcome === 'no_show').length;
+  const compareShowRate = compareCalls > 0 ? Math.round(((compareCalls - compareNoShows) / compareCalls) * 100) : 0;
+
+  // Overdue payments (always current, not filtered by date)
   const overduePayments = useMemo(() => paymentPlans.filter((p) => p.status === 'overdue'), [paymentPlans]);
 
-  // Weekly revenue chart data (last 8 weeks)
+  // Weekly revenue chart data
   const chartData = useMemo(() => {
     const weeks = [];
     const now = new Date();
@@ -154,7 +162,17 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold">Overview</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-xl font-bold">Overview</h2>
+      </div>
+
+      <DateRangeFilter
+        preset={preset}
+        setPreset={setPreset}
+        presets={presets}
+        compareEnabled={compareEnabled}
+        setCompareEnabled={setCompareEnabled}
+      />
 
       {/* Overdue alert banner */}
       {overduePayments.length > 0 && (
@@ -171,15 +189,25 @@ export default function Overview() {
 
       {/* Metric cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="MTD Collected" value={formatCurrency(mtdCollected)} accent />
         <MetricCard
-          title="MTD Show Rate"
+          title="Collected"
+          value={formatCurrency(rangeCollected)}
+          delta={compareEnabled ? calcDelta(rangeCollected, compareCollected) : null}
+          accent
+        />
+        <MetricCard
+          title="Show Rate"
           value={`${showRate}%`}
           warning={showRate < 65 && showRate >= 55}
           danger={showRate < 55}
           subtitle={`${totalCalls - noShows}/${totalCalls} calls`}
+          delta={compareEnabled ? calcDelta(showRate, compareShowRate) : null}
         />
-        <MetricCard title="Deals Closed" value={dealsClosedCount} subtitle="This month" />
+        <MetricCard
+          title="Deals Closed"
+          value={rangeDeals.length}
+          delta={compareEnabled ? calcDelta(rangeDeals.length, compareDeals.length) : null}
+        />
         <MetricCard
           title="Overdue Payments"
           value={overduePayments.length}

@@ -4,18 +4,21 @@ import SortableTable from '../components/SortableTable';
 import StatusBadge from '../components/StatusBadge';
 import CloserAvatar from '../components/CloserAvatar';
 import SlideOver from '../components/SlideOver';
+import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime, insertRow } from '../hooks/useSupabase';
 import {
   formatCurrency,
   formatDate,
+  isInDateRange,
   CLOSERS,
   PROGRAMMES,
   DEAL_STATUSES,
   PAYMENT_METHODS,
   SOURCES,
 } from '../lib/constants';
+import useDateRange from '../hooks/useDateRange';
 
 const EMPTY_FORM = {
   client_name: '',
@@ -35,7 +38,7 @@ const EMPTY_FORM = {
 export default function Deals() {
   const [filterCloser, setFilterCloser] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterMonth, setFilterMonth] = useState('all');
+  const { preset, setPreset, presets, dateRange } = useDateRange('this_month');
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -50,29 +53,15 @@ export default function Deals() {
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
   useRealtime('deals', handleRealtime);
 
-  // Available months for filter
-  const months = useMemo(() => {
-    const set = new Set();
-    deals.forEach((d) => {
-      const dt = new Date(d.created_at);
-      set.add(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`);
-    });
-    return Array.from(set).sort().reverse();
-  }, [deals]);
-
   // Apply filters
   const filtered = useMemo(() => {
     return deals.filter((d) => {
       if (filterCloser !== 'all' && d.closer_id !== filterCloser) return false;
       if (filterStatus !== 'all' && d.status !== filterStatus) return false;
-      if (filterMonth !== 'all') {
-        const dt = new Date(d.created_at);
-        const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
-        if (key !== filterMonth) return false;
-      }
+      if (!isInDateRange(d.created_at, dateRange.start, dateRange.end)) return false;
       return true;
     });
-  }, [deals, filterCloser, filterStatus, filterMonth]);
+  }, [deals, filterCloser, filterStatus, dateRange]);
 
   const columns = [
     {
@@ -163,6 +152,8 @@ export default function Deals() {
         </button>
       </div>
 
+      <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} />
+
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <select
@@ -180,18 +171,6 @@ export default function Deals() {
         >
           <option value="all">All Statuses</option>
           {DEAL_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-        </select>
-        <select
-          value={filterMonth}
-          onChange={(e) => setFilterMonth(e.target.value)}
-          className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
-        >
-          <option value="all">All Months</option>
-          {months.map((m) => {
-            const [y, mo] = m.split('-');
-            const label = new Date(y, Number(mo) - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-            return <option key={m} value={m}>{label}</option>;
-          })}
         </select>
       </div>
 

@@ -56,3 +56,15 @@ export function getMonthStart() {
 export function getMonthLabel() {
   return new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 }
+
+export function isInDateRange(dateStr, start, end) {
+  if (!start) return true;
+  const d = new Date(dateStr);
+  return d >= start && d <= end;
+}
+
+export function calcDelta(current, previous) {
+  if (!previous || previous === 0) return null;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  return { value: pct, direction: pct >= 0 ? 'up' : 'down' };
+}
