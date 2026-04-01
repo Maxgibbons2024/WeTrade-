@@ -226,15 +226,15 @@ export default async function handler(req, res) {
     }
 
     const event = body.event;
-    if (!event || event.type !== 'message' || event.subtype) {
-      return res.status(200).json({ ok: true, ignored: 'not a user message' });
+    if (!event || event.type !== 'message') {
+      return res.status(200).json({ ok: true, ignored: 'not a message' });
     }
 
     const channel = event.channel;
     const text = event.text || '';
     const messageTs = event.ts || '';
 
-    // --- Payment notification channel ---
+    // --- Payment notification channel (allow bot messages) ---
     if (channel === process.env.SLACK_CHANNEL_DEALS) {
       const payment = parsePaymentNotification(text);
       if (!payment) {
@@ -304,7 +304,10 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, type: 'payment_receipt', matched });
     }
 
-    // --- Sales team chat (deals) ---
+    // --- Sales team chat & EOD (skip edits, bot messages, etc.) ---
+    if (event.subtype) {
+      return res.status(200).json({ ok: true, ignored: 'not a user message' });
+    }
     const closer = await resolveCloser(event.user);
 
     if (channel === process.env.SLACK_CHANNEL_SALES && isDealMessage(text)) {
