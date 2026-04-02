@@ -32,7 +32,10 @@ export default function PaymentPlans() {
   const [savingPlan, setSavingPlan] = useState(false);
 
   function handleEditPlan(plan) {
-    setEditingPlan(plan);
+    const linkedDeal = deals.find((d) => d.id === plan.deal_id)
+      || deals.find((d) => d.client_name && plan.client_name && d.client_name.toLowerCase() === plan.client_name.toLowerCase());
+    const dealDate = linkedDeal ? linkedDeal.created_at.split('T')[0] : '';
+    setEditingPlan({ ...plan, _linkedDealId: linkedDeal?.id || null });
     setPlanForm({
       client_name: plan.client_name || '',
       closer_id: plan.closer_id || '',
@@ -43,6 +46,7 @@ export default function PaymentPlans() {
       next_due_date: plan.next_due_date || '',
       status: plan.status || 'active',
       notes: plan.notes || '',
+      deal_date: dealDate,
     });
   }
 
@@ -61,6 +65,12 @@ export default function PaymentPlans() {
         status: planForm.status,
         notes: planForm.notes || null,
       });
+      // Update the linked deal's date if changed
+      if (editingPlan._linkedDealId && planForm.deal_date) {
+        await updateRow('deals', editingPlan._linkedDealId, {
+          created_at: new Date(planForm.deal_date).toISOString(),
+        });
+      }
       toast.success(`Payment plan updated for ${planForm.client_name}`);
       setEditingPlan(null);
       refetch();
@@ -333,16 +343,11 @@ export default function PaymentPlans() {
       )}
       <SlideOver open={!!editingPlan} onClose={() => setEditingPlan(null)} title={editingPlan ? `Edit: ${editingPlan.client_name}` : ''}>
         <form onSubmit={handleSavePlan} className="space-y-4">
-          {editingPlan && (() => {
-            const linkedDeal = deals.find((d) => d.id === editingPlan.deal_id)
-              || deals.find((d) => d.client_name && editingPlan.client_name && d.client_name.toLowerCase() === editingPlan.client_name.toLowerCase());
-            return (
-              <div className="bg-brand-dark rounded-lg p-3 border border-gray-800">
-                <p className="text-xs text-gray-500 mb-1">Deal Date</p>
-                <p className="text-sm font-medium">{linkedDeal ? formatDate(linkedDeal.created_at) : 'No linked deal found'}</p>
-              </div>
-            );
-          })()}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
+            <input type="date" value={planForm.deal_date || ''} onChange={(e) => setPlanForm({ ...planForm, deal_date: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            {!editingPlan?._linkedDealId && <p className="text-xs text-amber-400 mt-1">No linked deal found — date won't be saved to a deal</p>}
+          </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Client Name</label>
             <input name="client_name" value={planForm.client_name || ''} onChange={(e) => setPlanForm({ ...planForm, client_name: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
