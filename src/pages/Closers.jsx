@@ -22,6 +22,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 export default function Closers() {
   const [filter, setFilter] = useState('all');
+  const [expandedCloser, setExpandedCloser] = useState(null);
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
@@ -55,6 +56,13 @@ export default function Closers() {
         ? Math.round(rangeFathom.reduce((sum, f) => sum + (f.duration_seconds || 0), 0) / fathomTotalCalls)
         : 0;
 
+      const pifDeals = rangeDeals.filter((d) => !Number(d.monthly_amount));
+      const ppDeals = rangeDeals.filter((d) => Number(d.monthly_amount) > 0);
+      const pifCount = pifDeals.length;
+      const ppCount = ppDeals.length;
+      const pifRevenue = pifDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+      const ppRevenue = ppDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+
       return {
         ...closer,
         showRate,
@@ -67,6 +75,12 @@ export default function Closers() {
         fathomTotalCalls,
         fathomTotalTalkTime,
         fathomAvgDuration,
+        pifCount,
+        ppCount,
+        pifRevenue,
+        ppRevenue,
+        rangeDeals,
+        closerPlans,
       };
     });
   }, [deals, eodCalls, paymentPlans, fathomCalls, dateRange]);
@@ -172,18 +186,59 @@ export default function Closers() {
           const showWarning = stat.showRate < 65 && stat.showRate >= 55;
           const showDanger = stat.showRate < 55;
 
+          const isExpanded = expandedCloser === stat.id;
+
           return (
-            <div key={stat.id} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+            <div
+              key={stat.id}
+              className={`bg-[#1a1d20] rounded-xl border p-5 cursor-pointer transition-colors ${isExpanded ? 'border-brand-cyan/50' : 'border-gray-800 hover:border-gray-700'}`}
+              onClick={() => setExpandedCloser(isExpanded ? null : stat.id)}
+            >
               <div className="flex items-center gap-3 mb-4">
                 <CloserAvatar closerId={stat.id} size="lg" />
-                <div>
+                <div className="flex-1">
                   <h3 className="font-semibold">{stat.name}</h3>
-                  <p className="text-xs text-gray-500">{stat.totalCalls} calls</p>
+                  <p className="text-xs text-gray-500">{stat.closesCount} closes · {stat.totalCalls} calls</p>
+                </div>
+                <span className="text-gray-500 text-sm">{isExpanded ? '▲' : '▼'}</span>
+              </div>
+
+              {/* Stats grid */}
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <div>
+                  <p className="text-xs text-gray-500">Revenue</p>
+                  <p className="text-sm font-semibold text-brand-cyan">{formatCurrency(stat.mtdRevenue)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Avg Deal</p>
+                  <p className="text-sm font-semibold">{formatCurrency(stat.avgDealSize)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">PIF</p>
+                  <p className="text-sm font-semibold text-green-400">{stat.pifCount}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">PP</p>
+                  <p className="text-sm font-semibold text-amber-400">{stat.ppCount}</p>
                 </div>
               </div>
 
+              {/* PIF/PP ratio bar */}
+              {stat.closesCount > 0 && (
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-gray-500">PIF / PP Ratio</span>
+                    <span className="text-gray-400">{stat.pifCount} PIF · {stat.ppCount} PP</span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-green-400 transition-all" style={{ width: `${(stat.pifCount / stat.closesCount) * 100}%` }} />
+                    <div className="h-full bg-amber-400 transition-all" style={{ width: `${(stat.ppCount / stat.closesCount) * 100}%` }} />
+                  </div>
+                </div>
+              )}
+
               {/* Show rate progress bar */}
-              <div className="mb-4">
+              <div className="mb-3">
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-500">Show Rate</span>
                   <span className={showDanger ? 'text-red-400 font-semibold' : showWarning ? 'text-amber-400 font-semibold' : 'text-brand-cyan font-semibold'}>
@@ -199,45 +254,60 @@ export default function Closers() {
                     }}
                   />
                 </div>
-                {showDanger && <p className="text-xs text-red-400 mt-1">Below 55% — critical</p>}
-                {showWarning && <p className="text-xs text-amber-400 mt-1">Below 65% — needs improvement</p>}
               </div>
 
-              {/* Stats grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs text-gray-500">Revenue (FE)</p>
-                  <p className="text-sm font-semibold">{formatCurrency(stat.mtdRevenue)}</p>
+              {/* Expanded section */}
+              {isExpanded && (
+                <div className="mt-4 pt-4 border-t border-gray-800 space-y-4" onClick={(e) => e.stopPropagation()}>
+                  {/* Extended stats */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500">PIF Revenue</p>
+                      <p className="text-sm font-semibold text-green-400">{formatCurrency(stat.pifRevenue)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">PP Revenue</p>
+                      <p className="text-sm font-semibold text-amber-400">{formatCurrency(stat.ppRevenue)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">No-shows</p>
+                      <p className="text-sm font-semibold text-red-400">{stat.noShowCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Active Plans</p>
+                      <p className="text-sm font-semibold">{stat.closerPlans.filter((p) => p.status !== 'completed').length}</p>
+                    </div>
+                  </div>
+
+                  {/* Deals list */}
+                  <div>
+                    <h4 className="text-xs text-gray-500 font-medium mb-2">Deals ({stat.rangeDeals.length})</h4>
+                    {stat.rangeDeals.length === 0 ? (
+                      <p className="text-xs text-gray-600">No deals in this period</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                        {stat.rangeDeals.map((deal) => (
+                          <div key={deal.id} className="flex items-center justify-between bg-brand-dark rounded-lg px-3 py-2">
+                            <div className="flex items-center gap-3">
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${Number(deal.monthly_amount) > 0 ? 'bg-amber-400/20 text-amber-400' : 'bg-green-400/20 text-green-400'}`}>
+                                {Number(deal.monthly_amount) > 0 ? 'PP' : 'PIF'}
+                              </span>
+                              <span className="text-sm font-medium">{deal.client_name}</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="text-sm text-brand-cyan font-semibold">{formatCurrency(deal.front_end)}</span>
+                              {Number(deal.monthly_amount) > 0 && (
+                                <span className="text-xs text-gray-500">{formatCurrency(deal.monthly_amount)}/mo</span>
+                              )}
+                              <span className="text-xs text-gray-500">{deal.programme}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500">Total Collected</p>
-                  <p className="text-sm font-semibold">{formatCurrency(stat.totalCollected)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Avg Deal Size</p>
-                  <p className="text-sm font-semibold">{formatCurrency(stat.avgDealSize)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Closes</p>
-                  <p className="text-sm font-semibold">{stat.closesCount}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">No-shows</p>
-                  <p className="text-sm font-semibold text-red-400">{stat.noShowCount}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Fathom Calls</p>
-                  <p className="text-sm font-semibold">{stat.fathomTotalCalls}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Total Talk Time</p>
-                  <p className="text-sm font-semibold">{formatTime(stat.fathomTotalTalkTime)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Avg Call Duration</p>
-                  <p className="text-sm font-semibold">{formatTime(stat.fathomAvgDuration)}</p>
-                </div>
-              </div>
+              )}
             </div>
           );
         })}
