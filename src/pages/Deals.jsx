@@ -157,10 +157,11 @@ export default function Deals() {
         status: form.status,
       };
 
+      if (form.created_at) {
+        payload.created_at = new Date(form.created_at).toISOString();
+      }
+
       if (editingDeal) {
-        if (form.created_at) {
-          payload.created_at = new Date(form.created_at).toISOString();
-        }
         await updateRow('deals', editingDeal.id, payload);
 
         // Update or create payment plan if monthly amount changed
@@ -312,18 +313,16 @@ export default function Deals() {
               className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
             />
           </div>
-          {editingDeal && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
-              <input
-                name="created_at"
-                type="date"
-                value={form.created_at || ''}
-                onChange={handleFormChange}
-                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
-              />
-            </div>
-          )}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
+            <input
+              name="created_at"
+              type="date"
+              value={form.created_at || ''}
+              onChange={handleFormChange}
+              className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Closer *</label>
