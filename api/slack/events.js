@@ -69,40 +69,49 @@ function isDealMessage(text) {
   // Reject percentage values (show rate lines)
   if (/\d+\.\d+%/.test(text)) return false;
 
-  // Must contain " - " delimiter (client name - details pattern)
-  if (!text.includes(' - ')) return false;
-
-  // The part before the first dash should look like a client name
-  const dashIndex = text.indexOf(' - ');
-  const beforeDash = text.substring(0, dashIndex).trim();
-  // Must start with a letter, be 2-50 chars, no emoji colons
-  if (!/^[A-Za-z]/.test(beforeDash) || beforeDash.length < 2 || beforeDash.length > 50) return false;
-  if (beforeDash.includes(':')) return false;
-
-  const afterDash = text.substring(dashIndex + 3);
-
   // POSITIVE SIGNALS — require at least 2
   let signals = 0;
-  if (/£\s*\d{1,6}(?:,\d{3})*(?:\.\d{2})?/.test(afterDash)) signals++;
-  if (/\d+(?:\.\d+)?\s*k\b/i.test(afterDash)) signals++;
-  if (/p\/m|per\s*month|\/mo|monthly/i.test(afterDash)) signals++;
-  if (/(?:down|upfront)\s*/i.test(afterDash)) signals++;
-  if (/\b(?:Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i.test(afterDash)) signals++;
-  if (/paid/i.test(afterDash) && /[£\d]/.test(afterDash)) signals++;
+  if (/£\s*\d{1,6}(?:,\d{3})*(?:\.\d{2})?/.test(text)) signals++;
+  if (/\d+(?:\.\d+)?\s*k\b/i.test(text)) signals++;
+  if (/p\/m|per\s*month|\/mo|monthly/i.test(text)) signals++;
+  if (/(?:down|upfront)\s*/i.test(text)) signals++;
+  if (/\b(?:Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i.test(text)) signals++;
+  if (/paid/i.test(text) && /[£\d]/.test(text)) signals++;
+  if (/onboarding/i.test(text)) signals++;
 
   return signals >= 2;
 }
 
 // ---- Deal message parsing ----
 function parseDeal(text) {
+  // Try "ClientName - details" format first
+  let clientName = '';
+  let details = text;
+
   const dashIndex = text.indexOf(' - ');
-  if (dashIndex < 0) return null;
-  const clientName = text.substring(0, dashIndex).trim();
-  const details = text.substring(dashIndex + 3);
+  if (dashIndex > 0 && dashIndex < 50) {
+    const beforeDash = text.substring(0, dashIndex).trim();
+    // Check it looks like a name (starts with letter, no colons)
+    if (/^[A-Za-z]/.test(beforeDash) && !beforeDash.includes(':') && beforeDash.length >= 2) {
+      clientName = beforeDash;
+      details = text.substring(dashIndex + 3);
+    }
+  }
+
+  // If no dash format, try to extract name from start of message
+  // Pattern: "FirstName LastName <deal details...>"
+  if (!clientName) {
+    const nameMatch = text.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?=.*(?:\d+k|\d+\s*(?:down|p\/m|per month)|£|kickstarter|mechanical|pro|elite))/i);
+    if (nameMatch) {
+      clientName = nameMatch[1].trim();
+      details = text.substring(clientName.length).trim();
+    }
+  }
+
   if (!clientName) return null;
 
   let frontEnd = 0;
-  const feK = details.match(/(\d+(?:\.\d+)?)\s*k\s*(?:down|upfront|paid)/i);
+  const feK = details.match(/(\d+(?:\.\d+)?)\s*k\s*(?:down|upfront|paid)?/i);
   const feN = details.match(/£?\s*(\d{1,6}(?:,\d{3})*)\s*(?:down|upfront|paid)/i);
   if (feK) frontEnd = parseFloat(feK[1]) * 1000;
   else if (feN) frontEnd = parseFloat(feN[1].replace(/,/g, ''));
@@ -111,6 +120,18 @@ function parseDeal(text) {
   const moMatch = details.match(/(\d+(?:\.\d+)?)\s*(?:p\/m|per\s*month|\/mo|monthly)/i);
   if (moMatch) monthlyAmount = parseFloat(moMatch[1]);
 
+  // Also check for "x6 500" or "500 x 12" pattern (installments)
+  if (monthlyAmount === 0) {
+    const installMatch = details.match(/x\s*(\d+)\s+(\d+)/i) || details.match(/(\d+)\s*x\s*(\d+)/i);
+    if (installMatch) {
+      const a = parseInt(installMatch[1]);
+      const b = parseInt(installMatch[2]);
+      // The smaller number is likely the count, larger is the amount
+      if (a <= 24 && b > a) monthlyAmount = b;
+      else if (b <= 24 && a > b) monthlyAmount = a;
+    }
+  }
+
   // Reject if no financial data extracted
   if (frontEnd === 0 && monthlyAmount === 0) return null;
 
@@ -118,11 +139,13 @@ function parseDeal(text) {
   const progMatch = details.match(/\b(Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i);
   if (progMatch) {
     const p = progMatch[1].toLowerCase();
-    if (p === 'kickstarter') programme = 'Kickstarter';
+    if (p === 'kickstarter' || p === 'kickstater') programme = 'Kickstarter';
     else if (p.includes('mechanical')) programme = 'Mechanical Mastery';
     else if (p === 'pro') programme = 'Pro';
     else if (p === 'elite') programme = 'Elite';
   }
+  // Also catch common typos
+  if (/kickstater/i.test(details)) programme = 'Kickstarter';
 
   let onboardingAssignedTo = null;
   const assignMatch = details.match(/@([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
@@ -130,7 +153,7 @@ function parseDeal(text) {
 
   let onboardingDate = null;
   const dateMatch = details.match(
-    /(\d{1,2}[:.]\d{2}\s*(?:am|pm)?)\s*(?:on\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*(\d{1,2})(?:st|nd|rd|th)?\s*(January|February|March|April|May|June|July|August|September|October|November|December)/i
+    /(\d{1,2}[:.]\d{2}\s*(?:am|pm)?)\s*(?:on\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)?\s*(\d{1,2})(?:st|nd|rd|th)?\s*(January|February|March|April|May|June|July|August|September|October|November|December)/i
   );
   if (dateMatch) {
     const parsed = new Date(`${dateMatch[2]} ${dateMatch[3]} ${new Date().getFullYear()} ${dateMatch[1]}`);
