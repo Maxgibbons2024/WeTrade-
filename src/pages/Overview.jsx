@@ -11,11 +11,10 @@ import { Bar } from 'react-chartjs-2';
 import MetricCard from '../components/MetricCard';
 import DateRangeFilter from '../components/DateRangeFilter';
 import CloserAvatar from '../components/CloserAvatar';
-import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange, calcDelta, CLOSERS, OUTCOME_COLOURS } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, calcDelta, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 import useSheetStats from '../hooks/useSheetStats';
 
@@ -158,19 +157,6 @@ export default function Overview() {
     },
   };
 
-  // Today's EOD grouped by closer
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayEod = useMemo(() => {
-    const grouped = {};
-    eodCalls
-      .filter((c) => c.report_date === todayStr)
-      .forEach((c) => {
-        if (!grouped[c.closer_id]) grouped[c.closer_id] = { closer_name: c.closer_name, closer_id: c.closer_id, calls: [] };
-        grouped[c.closer_id].calls.push(c);
-      });
-    return Object.values(grouped);
-  }, [eodCalls, todayStr]);
-
   // Recent deals (last 10)
   const recentDeals = useMemo(() => deals.slice(0, 10), [deals]);
 
@@ -282,39 +268,36 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* Today's EOD reports */}
+        {/* Call Stats by Closer */}
         <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
-          <h3 className="text-sm font-medium text-gray-400 mb-4">Today&apos;s EOD Reports</h3>
-          {todayEod.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No EOD reports today</p>
+          <h3 className="text-sm font-medium text-gray-400 mb-4">Call Stats ({sheetMonth})</h3>
+          {!sheetData ? (
+            <p className="text-gray-500 text-sm text-center py-4">Loading call data...</p>
           ) : (
             <div className="space-y-4">
-              {todayEod.map((group) => (
-                <div key={group.closer_id}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <CloserAvatar closerId={group.closer_id} size="sm" />
-                    <span className="text-sm font-medium">{group.closer_name}</span>
-                    <span className="text-xs text-gray-500">{group.calls.length} calls</span>
+              {['lloyd', 'dave', 'zak'].map((closerId) => {
+                const closer = CLOSERS.find((c) => c.id === closerId);
+                const stats = sheetData[closerId];
+                if (!closer || !stats || stats.error) return null;
+                const scheduled = stats.metrics['SCHEDULED Consults']?.total ?? 0;
+                const live = stats.metrics['LIVE Consults']?.total ?? 0;
+                const showPct = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
+                const offers = stats.metrics['Offers']?.total ?? 0;
+                const closes = stats.metrics['Closes']?.total ?? 0;
+                return (
+                  <div key={closerId} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
+                    <CloserAvatar closerId={closerId} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{closer.name}</p>
+                      <p className="text-xs text-gray-500">{scheduled} booked · {live} taken · {showPct}% show</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{closes} <span className="text-xs text-gray-500">closes</span></p>
+                      <p className="text-xs text-gray-500">{offers} offers</p>
+                    </div>
                   </div>
-                  <div className="space-y-1.5 pl-8">
-                    {group.calls.map((call) => (
-                      <div key={call.id} className="flex items-center gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: OUTCOME_COLOURS[call.outcome] || '#6B7280' }}
-                        />
-                        <span className="text-sm text-gray-300">{call.client_name}</span>
-                        <StatusBadge status={call.outcome} type="outcome" />
-                        {call.deal_value && (
-                          <span className="text-xs text-brand-cyan font-medium ml-auto">
-                            {formatCurrency(call.deal_value)}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
