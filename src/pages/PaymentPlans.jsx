@@ -7,8 +7,9 @@ import CloserAvatar from '../components/CloserAvatar';
 import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
+import SlideOver from '../components/SlideOver';
 import { useQuery, useRealtime, updateRow } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
 export default function PaymentPlans() {
@@ -24,6 +25,49 @@ export default function PaymentPlans() {
   });
 
   const [markingPaid, setMarkingPaid] = useState(null);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [planForm, setPlanForm] = useState({});
+  const [savingPlan, setSavingPlan] = useState(false);
+
+  function handleEditPlan(plan) {
+    setEditingPlan(plan);
+    setPlanForm({
+      client_name: plan.client_name || '',
+      closer_id: plan.closer_id || '',
+      monthly_amount: plan.monthly_amount ?? '',
+      total_value: plan.total_value ?? '',
+      total_collected: plan.total_collected ?? '',
+      months_remaining: plan.months_remaining ?? '',
+      next_due_date: plan.next_due_date || '',
+      status: plan.status || 'active',
+      notes: plan.notes || '',
+    });
+  }
+
+  async function handleSavePlan(e) {
+    e.preventDefault();
+    setSavingPlan(true);
+    try {
+      await updateRow('payment_plans', editingPlan.id, {
+        client_name: planForm.client_name,
+        closer_id: planForm.closer_id,
+        monthly_amount: Number(planForm.monthly_amount) || 0,
+        total_value: Number(planForm.total_value) || 0,
+        total_collected: Number(planForm.total_collected) || 0,
+        months_remaining: Number(planForm.months_remaining) || 0,
+        next_due_date: planForm.next_due_date,
+        status: planForm.status,
+        notes: planForm.notes || null,
+      });
+      toast.success(`Payment plan updated for ${planForm.client_name}`);
+      setEditingPlan(null);
+      refetch();
+    } catch (err) {
+      toast.error(`Failed: ${err.message}`);
+    } finally {
+      setSavingPlan(false);
+    }
+  }
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
   const handleReceiptsRealtime = useCallback(() => { refetchReceipts(); }, [refetchReceipts]);
@@ -212,6 +256,7 @@ export default function PaymentPlans() {
             columns={columns}
             data={filteredPlans}
             defaultSort={{ column: 'next_due_date', ascending: true }}
+            onRowClick={(row) => handleEditPlan(row)}
           />
         </>
       )}
@@ -223,6 +268,60 @@ export default function PaymentPlans() {
           defaultSort={{ column: 'received_at', ascending: false }}
         />
       )}
+      <SlideOver open={!!editingPlan} onClose={() => setEditingPlan(null)} title={editingPlan ? `Edit: ${editingPlan.client_name}` : ''}>
+        <form onSubmit={handleSavePlan} className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Client Name</label>
+            <input name="client_name" value={planForm.client_name || ''} onChange={(e) => setPlanForm({ ...planForm, client_name: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Closer</label>
+            <select value={planForm.closer_id || ''} onChange={(e) => setPlanForm({ ...planForm, closer_id: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan">
+              {CLOSERS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Monthly (£)</label>
+              <input type="number" min="0" step="1" value={planForm.monthly_amount || ''} onChange={(e) => setPlanForm({ ...planForm, monthly_amount: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Months Left</label>
+              <input type="number" min="0" step="1" value={planForm.months_remaining || ''} onChange={(e) => setPlanForm({ ...planForm, months_remaining: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Total Deal Size (£)</label>
+              <input type="number" min="0" step="1" value={planForm.total_value || ''} onChange={(e) => setPlanForm({ ...planForm, total_value: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Total Collected (£)</label>
+              <input type="number" min="0" step="1" value={planForm.total_collected || ''} onChange={(e) => setPlanForm({ ...planForm, total_collected: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Next Due Date</label>
+            <input type="date" value={planForm.next_due_date || ''} onChange={(e) => setPlanForm({ ...planForm, next_due_date: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <select value={planForm.status || 'active'} onChange={(e) => setPlanForm({ ...planForm, status: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan">
+              <option value="active">Active</option>
+              <option value="due_soon">Due Soon</option>
+              <option value="overdue">Overdue</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Notes</label>
+            <textarea value={planForm.notes || ''} onChange={(e) => setPlanForm({ ...planForm, notes: e.target.value })} rows={3} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan resize-none" />
+          </div>
+          <button type="submit" disabled={savingPlan} className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50">
+            {savingPlan ? 'Saving...' : 'Update Plan'}
+          </button>
+        </form>
+      </SlideOver>
     </div>
   );
 }
