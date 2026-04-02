@@ -12,7 +12,7 @@ import { formatCurrency, formatDate, isInDateRange } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
 export default function PaymentPlans() {
-  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
+  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
   const [tab, setTab] = useState('plans');
 
   const { data: plans, loading, error, refetch } = useQuery('payment_plans', {
@@ -32,7 +32,11 @@ export default function PaymentPlans() {
 
   const filteredPlans = useMemo(() => {
     if (!dateRange.start) return plans;
-    return plans.filter((p) => isInDateRange(p.next_due_date, dateRange.start, dateRange.end));
+    return plans.filter((p) => {
+      // Always show overdue plans regardless of date filter
+      if (p.status === 'overdue') return true;
+      return isInDateRange(p.next_due_date, dateRange.start, dateRange.end);
+    });
   }, [plans, dateRange]);
 
   const activePlans = useMemo(() => plans.filter((p) => p.status !== 'completed'), [plans]);
