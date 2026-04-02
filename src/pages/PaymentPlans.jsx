@@ -8,7 +8,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import SlideOver from '../components/SlideOver';
-import { useQuery, useRealtime, updateRow } from '../hooks/useSupabase';
+import { useQuery, useRealtime, updateRow, insertRow } from '../hooks/useSupabase';
 import { formatCurrency, formatDate, isInDateRange, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
@@ -92,6 +92,14 @@ export default function PaymentPlans() {
 
   const unmatchedReceipts = useMemo(() => (receipts || []).filter((r) => !r.matched), [receipts]);
 
+  // Receipts in the current date range
+  const filteredReceipts = useMemo(() => {
+    if (!dateRange.start || !receipts) return receipts || [];
+    return (receipts || []).filter((r) => isInDateRange(r.received_at, dateRange.start, dateRange.end));
+  }, [receipts, dateRange]);
+  const collectedInRange = useMemo(() => filteredReceipts.filter((r) => r.success).reduce((sum, r) => sum + Number(r.amount), 0), [filteredReceipts]);
+  const failedInRange = useMemo(() => filteredReceipts.filter((r) => !r.success).length, [filteredReceipts]);
+
   async function handleMarkPaid(plan) {
     setMarkingPaid(plan.id);
     try {
@@ -106,6 +114,16 @@ export default function PaymentPlans() {
         newStatus = 'completed';
       }
 
+      // Record payment receipt
+      await insertRow('payment_receipts', {
+        client_name: plan.client_name,
+        amount: Number(plan.monthly_amount),
+        success: true,
+        payment_plan_id: plan.id,
+        deal_id: plan.deal_id || null,
+        matched: true,
+      });
+
       await updateRow('payment_plans', plan.id, {
         total_collected: newCollected,
         months_remaining: newMonthsRemaining,
@@ -117,8 +135,37 @@ export default function PaymentPlans() {
 
       toast.success(`Payment recorded for ${plan.client_name}`);
       refetch();
+      refetchReceipts();
     } catch (err) {
       toast.error(`Failed: ${err.message}`);
+    } finally {
+      setMarkingPaid(null);
+    }
+  }
+
+  async function handleMarkFailed(plan) {
+    setMarkingPaid(plan.id);
+    try {
+      // Record failed payment receipt
+      await insertRow('payment_receipts', {
+        client_name: plan.client_name,
+        amount: Number(plan.monthly_amount),
+        success: false,
+        payment_plan_id: plan.id,
+        deal_id: plan.deal_id || null,
+        matched: true,
+      });
+
+      await updateRow('payment_plans', plan.id, {
+        status: 'overdue',
+        last_payment_confirmed: false,
+      });
+
+      toast.error(`Failed payment logged for ${plan.client_name}`);
+      refetch();
+      refetchReceipts();
+    } catch (err) {
+      toast.error(`Error: ${err.message}`);
     } finally {
       setMarkingPaid(null);
     }
@@ -173,16 +220,28 @@ export default function PaymentPlans() {
       sortable: false,
       render: (val, row) =>
         row.status !== 'completed' ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMarkPaid(row);
-            }}
-            disabled={markingPaid === val}
-            className="bg-brand-cyan/10 text-brand-cyan px-3 py-1 rounded-lg text-xs font-medium hover:bg-brand-cyan/20 transition-colors disabled:opacity-50"
-          >
-            {markingPaid === val ? '...' : 'Mark Paid'}
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMarkPaid(row);
+              }}
+              disabled={markingPaid === val}
+              className="bg-brand-cyan/10 text-brand-cyan px-3 py-1 rounded-lg text-xs font-medium hover:bg-brand-cyan/20 transition-colors disabled:opacity-50"
+            >
+              {markingPaid === val ? '...' : 'Paid'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMarkFailed(row);
+              }}
+              disabled={markingPaid === val}
+              className="bg-red-500/10 text-red-400 px-3 py-1 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50"
+            >
+              Failed
+            </button>
+          </div>
         ) : null,
     },
   ];
@@ -218,10 +277,12 @@ export default function PaymentPlans() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Payment Plans</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         <MetricCard title="To Collect" value={formatCurrency(filteredDueTotal)} accent subtitle={`${filteredActive.length} plan${filteredActive.length !== 1 ? 's' : ''} due`} />
+        <MetricCard title="Collected" value={formatCurrency(collectedInRange)} subtitle={`${filteredReceipts.filter((r) => r.success).length} payment${filteredReceipts.filter((r) => r.success).length !== 1 ? 's' : ''}`} />
         <MetricCard title="Plans Due" value={filteredActive.length} />
         <MetricCard title="Overdue" value={formatCurrency(filteredOverdueTotal)} danger={filteredOverdue.length > 0} subtitle={`${filteredOverdue.length} plan${filteredOverdue.length !== 1 ? 's' : ''}`} />
+        {failedInRange > 0 && <MetricCard title="Failed Payments" value={failedInRange} danger subtitle="Needs attention" />}
         <MetricCard title="Pipeline Value" value={formatCurrency(pipelineValue)} subtitle="Remaining to collect" />
         <MetricCard title="Total Active Plans" value={activePlans.length} subtitle="Across all time" />
       </div>
