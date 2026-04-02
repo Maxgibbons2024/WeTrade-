@@ -26,6 +26,8 @@ const EMPTY_FORM = {
   closer_name: 'Lloyd',
   front_end: '',
   monthly_amount: '',
+  total_paid: '',
+  total_deal_size: '',
   programme: 'Kickstarter',
   source: 'manual',
   payment_method: 'stripe',
@@ -107,12 +109,15 @@ export default function Deals() {
 
   function handleEditDeal(deal) {
     setEditingDeal(deal);
+    const plan = paymentPlans.find((p) => p.deal_id === deal.id);
     setForm({
       client_name: deal.client_name || '',
       closer_id: deal.closer_id || 'lloyd',
       closer_name: deal.closer_name || 'Lloyd',
       front_end: deal.front_end ?? '',
       monthly_amount: deal.monthly_amount ?? '',
+      total_paid: plan ? plan.total_collected : '',
+      total_deal_size: plan ? plan.total_value : '',
       programme: deal.programme || 'Kickstarter',
       source: deal.source || 'manual',
       payment_method: deal.payment_method || 'stripe',
@@ -163,9 +168,15 @@ export default function Deals() {
         const existingPlan = paymentPlans.find((p) => p.deal_id === editingDeal.id);
         if (monthly > 0) {
           const dealDate = form.created_at ? new Date(form.created_at) : new Date(editingDeal.created_at);
-          const totalValue = Number(form.front_end) + (monthly * 12);
+          const totalValue = Number(form.total_deal_size) || (Number(form.front_end) + (monthly * 12));
+          const totalCollected = Number(form.total_paid) || Number(form.front_end);
+          const totalLeft = Math.max(0, totalValue - totalCollected);
+          const monthsRemaining = monthly > 0 ? Math.ceil(totalLeft / monthly) : 0;
+
+          // Calculate next due date based on deal date + number of payments made
+          const paymentsMade = monthly > 0 ? Math.round((totalCollected - Number(form.front_end)) / monthly) : 0;
           const nextDue = new Date(dealDate);
-          nextDue.setMonth(nextDue.getMonth() + 1);
+          nextDue.setMonth(nextDue.getMonth() + paymentsMade + 1);
 
           const planData = {
             deal_id: editingDeal.id,
@@ -173,10 +184,10 @@ export default function Deals() {
             closer_id: form.closer_id,
             monthly_amount: monthly,
             total_value: totalValue,
-            total_collected: Number(form.front_end),
-            months_remaining: 12,
+            total_collected: totalCollected,
+            months_remaining: monthsRemaining,
             next_due_date: nextDue.toISOString().split('T')[0],
-            status: nextDue < new Date() ? 'overdue' : 'active',
+            status: totalLeft === 0 ? 'completed' : nextDue < new Date() ? 'overdue' : 'active',
           };
 
           if (existingPlan) {
@@ -195,9 +206,15 @@ export default function Deals() {
         if (monthly > 0 && result && result[0]) {
           const deal = result[0];
           const dealDate = new Date(deal.created_at);
-          const totalValue = Number(form.front_end) + (monthly * 12);
+          const totalValue = Number(form.total_deal_size) || (Number(form.front_end) + (monthly * 12));
+          const totalCollected = Number(form.total_paid) || Number(form.front_end);
+          const totalLeft = Math.max(0, totalValue - totalCollected);
+          const monthsRemaining = monthly > 0 ? Math.ceil(totalLeft / monthly) : 0;
+
+          // Calculate next due date based on deal date + number of payments made
+          const paymentsMade = monthly > 0 ? Math.round((totalCollected - Number(form.front_end)) / monthly) : 0;
           const nextDue = new Date(dealDate);
-          nextDue.setMonth(nextDue.getMonth() + 1);
+          nextDue.setMonth(nextDue.getMonth() + paymentsMade + 1);
 
           await insertRow('payment_plans', {
             deal_id: deal.id,
@@ -205,10 +222,10 @@ export default function Deals() {
             closer_id: form.closer_id,
             monthly_amount: monthly,
             total_value: totalValue,
-            total_collected: Number(form.front_end),
-            months_remaining: 12,
+            total_collected: totalCollected,
+            months_remaining: monthsRemaining,
             next_due_date: nextDue.toISOString().split('T')[0],
-            status: nextDue < new Date() ? 'overdue' : 'active',
+            status: totalLeft === 0 ? 'completed' : nextDue < new Date() ? 'overdue' : 'active',
           });
         }
 
@@ -331,6 +348,18 @@ export default function Deals() {
               <input name="monthly_amount" type="number" min="0" step="1" value={form.monthly_amount} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
             </div>
           </div>
+          {Number(form.monthly_amount) > 0 && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Total Deal Size (£)</label>
+                <input name="total_deal_size" type="number" min="0" step="1" value={form.total_deal_size} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Total Paid (£)</label>
+                <input name="total_paid" type="number" min="0" step="1" value={form.total_paid} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Source</label>
