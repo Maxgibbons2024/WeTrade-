@@ -62,7 +62,7 @@ export default function Deals() {
       if (filterCloser !== 'all' && d.closer_id !== filterCloser) return false;
       if (filterStatus !== 'all' && d.status !== filterStatus) return false;
       if (q && !d.client_name?.toLowerCase().includes(q) && !d.closer_name?.toLowerCase().includes(q)) return false;
-      if (!isInDateRange(d.created_at, dateRange.start, dateRange.end)) return false;
+      if (!q && !isInDateRange(d.created_at, dateRange.start, dateRange.end)) return false;
       return true;
     });
   }, [deals, filterCloser, filterStatus, dateRange, search]);
