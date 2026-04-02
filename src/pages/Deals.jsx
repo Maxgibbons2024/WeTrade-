@@ -156,9 +156,61 @@ export default function Deals() {
           payload.created_at = new Date(form.created_at).toISOString();
         }
         await updateRow('deals', editingDeal.id, payload);
+
+        // Update or create payment plan if monthly amount changed
+        const monthly = Number(form.monthly_amount) || 0;
+        const existingPlan = paymentPlans.find((p) => p.deal_id === editingDeal.id);
+        if (monthly > 0) {
+          const dealDate = form.created_at ? new Date(form.created_at) : new Date(editingDeal.created_at);
+          const totalValue = Number(form.front_end) + (monthly * 12);
+          const nextDue = new Date(dealDate);
+          nextDue.setMonth(nextDue.getMonth() + 1);
+
+          const planData = {
+            deal_id: editingDeal.id,
+            client_name: form.client_name,
+            closer_id: form.closer_id,
+            monthly_amount: monthly,
+            total_value: totalValue,
+            total_collected: Number(form.front_end),
+            months_remaining: 12,
+            next_due_date: nextDue.toISOString().split('T')[0],
+            status: nextDue < new Date() ? 'overdue' : 'active',
+          };
+
+          if (existingPlan) {
+            await updateRow('payment_plans', existingPlan.id, planData);
+          } else {
+            await insertRow('payment_plans', planData);
+          }
+        }
+
         toast.success('Deal updated successfully');
       } else {
-        await insertRow('deals', payload);
+        const result = await insertRow('deals', payload);
+
+        // Auto-create payment plan if monthly amount > 0
+        const monthly = Number(form.monthly_amount) || 0;
+        if (monthly > 0 && result && result[0]) {
+          const deal = result[0];
+          const dealDate = new Date(deal.created_at);
+          const totalValue = Number(form.front_end) + (monthly * 12);
+          const nextDue = new Date(dealDate);
+          nextDue.setMonth(nextDue.getMonth() + 1);
+
+          await insertRow('payment_plans', {
+            deal_id: deal.id,
+            client_name: form.client_name,
+            closer_id: form.closer_id,
+            monthly_amount: monthly,
+            total_value: totalValue,
+            total_collected: Number(form.front_end),
+            months_remaining: 12,
+            next_due_date: nextDue.toISOString().split('T')[0],
+            status: nextDue < new Date() ? 'overdue' : 'active',
+          });
+        }
+
         toast.success('Deal added successfully');
       }
       setForm(EMPTY_FORM);
