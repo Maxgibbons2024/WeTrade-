@@ -40,25 +40,13 @@ export default function PaymentPlans() {
   }, [plans, dateRange]);
 
   const activePlans = useMemo(() => plans.filter((p) => p.status !== 'completed'), [plans]);
-  const dueThisMonth = useMemo(() => {
-    const now = new Date();
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return plans.filter((p) => {
-      const due = new Date(p.next_due_date);
-      return due <= monthEnd && due >= now && p.status !== 'completed';
-    });
-  }, [plans]);
-  const overduePlans = useMemo(() => plans.filter((p) => p.status === 'overdue'), [plans]);
-  const pipelineValue = useMemo(() => plans.reduce((sum, p) => sum + (Number(p.total_value) - Number(p.total_collected)), 0), [plans]);
-  const overdueTotal = useMemo(() => overduePlans.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [overduePlans]);
+  const filteredActive = useMemo(() => filteredPlans.filter((p) => p.status !== 'completed'), [filteredPlans]);
+  const filteredOverdue = useMemo(() => filteredPlans.filter((p) => p.status === 'overdue'), [filteredPlans]);
+  const filteredDueTotal = useMemo(() => filteredActive.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredActive]);
+  const filteredOverdueTotal = useMemo(() => filteredOverdue.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredOverdue]);
+  const pipelineValue = useMemo(() => filteredActive.reduce((sum, p) => sum + (Number(p.total_value) - Number(p.total_collected)), 0), [filteredActive]);
 
-  // Receipt metrics
   const unmatchedReceipts = useMemo(() => (receipts || []).filter((r) => !r.matched), [receipts]);
-  const thisMonthReceipts = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return (receipts || []).filter((r) => new Date(r.received_at) >= monthStart);
-  }, [receipts]);
 
   async function handleMarkPaid(plan) {
     setMarkingPaid(plan.id);
@@ -186,18 +174,11 @@ export default function PaymentPlans() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Payment Plans</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <MetricCard title="Active Plans" value={activePlans.length} accent />
-        <MetricCard title="Due This Month" value={dueThisMonth.length} subtitle={`${formatCurrency(dueThisMonth.reduce((s, p) => s + Number(p.monthly_amount), 0))} total`} />
-        <MetricCard title="Overdue Total" value={formatCurrency(overdueTotal)} danger={overduePlans.length > 0} subtitle={`${overduePlans.length} plan${overduePlans.length !== 1 ? 's' : ''}`} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard title="Plans Due" value={filteredActive.length} subtitle={`${formatCurrency(filteredDueTotal)} due`} accent />
+        <MetricCard title="Overdue" value={formatCurrency(filteredOverdueTotal)} danger={filteredOverdue.length > 0} subtitle={`${filteredOverdue.length} plan${filteredOverdue.length !== 1 ? 's' : ''}`} />
         <MetricCard title="Pipeline Value" value={formatCurrency(pipelineValue)} subtitle="Remaining to collect" />
-        <MetricCard
-          title="Confirmed This Month"
-          value={thisMonthReceipts.length}
-          subtitle={unmatchedReceipts.length > 0 ? `${unmatchedReceipts.length} unmatched` : 'All matched'}
-          warning={unmatchedReceipts.length > 0}
-          accent={unmatchedReceipts.length === 0}
-        />
+        <MetricCard title="Total Active Plans" value={activePlans.length} subtitle="Across all time" />
       </div>
 
       {/* Tab toggle */}
