@@ -17,6 +17,7 @@ import ErrorState from '../components/ErrorState';
 import { useQuery } from '../hooks/useSupabase';
 import { CLOSERS, formatCurrency, isInDateRange } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
+import useSheetStats from '../hooks/useSheetStats';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -24,6 +25,11 @@ export default function Closers() {
   const [filter, setFilter] = useState('all');
   const [expandedCloser, setExpandedCloser] = useState(null);
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const currentMonth = monthNames[new Date().getMonth()];
+  const { data: sheetData, loading: sheetsLoading } = useSheetStats(currentMonth);
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
   const { data: eodCalls, loading: el, error: ee } = useQuery('eod_calls');
@@ -185,7 +191,6 @@ export default function Closers() {
         {displayed.map((stat) => {
           const showWarning = stat.showRate < 65 && stat.showRate >= 55;
           const showDanger = stat.showRate < 55;
-
           const isExpanded = expandedCloser === stat.id;
 
           return (
@@ -279,6 +284,24 @@ export default function Closers() {
                     </div>
                   </div>
 
+                  {/* Fathom stats */}
+                  {stat.fathomTotalCalls > 0 && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-gray-500">Fathom Calls</p>
+                        <p className="text-sm font-semibold">{stat.fathomTotalCalls}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Total Talk Time</p>
+                        <p className="text-sm font-semibold">{formatTime(stat.fathomTotalTalkTime)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Avg Call Duration</p>
+                        <p className="text-sm font-semibold">{formatTime(stat.fathomAvgDuration)}</p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Deals list */}
                   <div>
                     <h4 className="text-xs text-gray-500 font-medium mb-2">Deals ({stat.rangeDeals.length})</h4>
@@ -306,6 +329,51 @@ export default function Closers() {
                       </div>
                     )}
                   </div>
+
+                  {/* Daily Call Stats from Google Sheets */}
+                  {sheetData && sheetData[stat.id] && !sheetData[stat.id].error && (
+                    <div>
+                      <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity ({currentMonth})</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-gray-500">
+                              <th className="text-left py-1 pr-2 font-medium">Metric</th>
+                              {sheetData[stat.id].days.slice(-7).map((day) => (
+                                <th key={day} className="text-center py-1 px-1 font-medium min-w-[40px]">{day}</th>
+                              ))}
+                              <th className="text-center py-1 pl-2 font-semibold text-gray-400">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {['SCHEDULED Consults', 'LIVE Consults', 'Show %', 'Offers', 'Closes'].map((metric) => {
+                              const metricData = sheetData[stat.id].metrics[metric];
+                              if (!metricData) return null;
+                              const days = sheetData[stat.id].days;
+                              const lastDays = days.slice(-7);
+                              const dailyValues = metricData.daily.slice(-7);
+                              const isPercent = metric.includes('%');
+                              return (
+                                <tr key={metric} className="border-t border-gray-800/50">
+                                  <td className="py-1.5 pr-2 text-gray-400 font-medium whitespace-nowrap">{metric}</td>
+                                  {dailyValues.map((val, i) => (
+                                    <td key={lastDays[i]} className="text-center py-1.5 px-1">
+                                      <span className={val != null ? 'text-white' : 'text-gray-700'}>
+                                        {val != null ? (isPercent ? `${Math.round(val * 100)}%` : val) : '-'}
+                                      </span>
+                                    </td>
+                                  ))}
+                                  <td className="text-center py-1.5 pl-2 font-semibold text-brand-cyan">
+                                    {metricData.total != null ? (isPercent ? `${Math.round(metricData.total * 100)}%` : metricData.total) : '-'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
