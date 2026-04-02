@@ -28,8 +28,9 @@ export default function Closers() {
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
-  const currentMonth = monthNames[new Date().getMonth()];
-  const { data: sheetData, loading: sheetsLoading } = useSheetStats(currentMonth);
+  // Use the month from the date range filter's start date
+  const sheetMonth = dateRange.start ? monthNames[dateRange.start.getMonth()] : monthNames[new Date().getMonth()];
+  const { data: sheetData, loading: sheetsLoading } = useSheetStats(sheetMonth);
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
   const { data: eodCalls, loading: el, error: ee } = useQuery('eod_calls');
@@ -333,7 +334,7 @@ export default function Closers() {
                   {/* Daily Call Stats from Google Sheets */}
                   {sheetData && sheetData[stat.id] && !sheetData[stat.id].error && (
                     <div>
-                      <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity ({currentMonth})</h4>
+                      <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity ({sheetMonth})</h4>
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
