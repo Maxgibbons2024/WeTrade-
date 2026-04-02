@@ -24,6 +24,8 @@ export default function PaymentPlans() {
     order: { column: 'received_at', ascending: false },
   });
 
+  const { data: deals } = useQuery('deals');
+
   const [markingPaid, setMarkingPaid] = useState(null);
   const [editingPlan, setEditingPlan] = useState(null);
   const [planForm, setPlanForm] = useState({});
@@ -331,6 +333,15 @@ export default function PaymentPlans() {
       )}
       <SlideOver open={!!editingPlan} onClose={() => setEditingPlan(null)} title={editingPlan ? `Edit: ${editingPlan.client_name}` : ''}>
         <form onSubmit={handleSavePlan} className="space-y-4">
+          {editingPlan && (() => {
+            const linkedDeal = deals.find((d) => d.id === editingPlan.deal_id);
+            return linkedDeal ? (
+              <div className="bg-brand-dark rounded-lg p-3 border border-gray-800">
+                <p className="text-xs text-gray-500 mb-1">Deal Date</p>
+                <p className="text-sm font-medium">{formatDate(linkedDeal.created_at)}</p>
+              </div>
+            ) : null;
+          })()}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Client Name</label>
             <input name="client_name" value={planForm.client_name || ''} onChange={(e) => setPlanForm({ ...planForm, client_name: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
