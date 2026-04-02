@@ -83,6 +83,7 @@ export default function Deals() {
         </div>
       ),
     },
+    { key: 'payment_type', label: 'Type', render: (_, row) => Number(row.monthly_amount) > 0 ? <span className="text-xs font-medium text-amber-400">PP</span> : <span className="text-xs font-medium text-green-400">PIF</span> },
     { key: 'front_end', label: 'FE', render: (val) => <span className="text-brand-cyan font-semibold">{formatCurrency(val)}</span> },
     { key: 'monthly_amount', label: 'Monthly', render: (val) => Number(val) > 0 ? `${formatCurrency(val)}/mo` : '—' },
     { key: 'programme', label: 'Programme' },
