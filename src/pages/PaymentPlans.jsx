@@ -174,8 +174,9 @@ export default function PaymentPlans() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Payment Plans</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="Plans Due" value={filteredActive.length} subtitle={`${formatCurrency(filteredDueTotal)} due`} accent />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <MetricCard title="To Collect" value={formatCurrency(filteredDueTotal)} accent subtitle={`${filteredActive.length} plan${filteredActive.length !== 1 ? 's' : ''} due`} />
+        <MetricCard title="Plans Due" value={filteredActive.length} />
         <MetricCard title="Overdue" value={formatCurrency(filteredOverdueTotal)} danger={filteredOverdue.length > 0} subtitle={`${filteredOverdue.length} plan${filteredOverdue.length !== 1 ? 's' : ''}`} />
         <MetricCard title="Pipeline Value" value={formatCurrency(pipelineValue)} subtitle="Remaining to collect" />
         <MetricCard title="Total Active Plans" value={activePlans.length} subtitle="Across all time" />
