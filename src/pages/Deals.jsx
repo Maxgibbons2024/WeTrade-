@@ -71,9 +71,22 @@ export default function Deals() {
         // Show deal if it was created in range OR had a payment in range
         const createdInRange = isInDateRange(d.created_at, dateRange.start, dateRange.end);
         if (!createdInRange) {
-          // Check for payment activity in range
-          const plan = paymentPlans.find((p) => p.deal_id === d.id || (p.client_name && d.client_name && p.client_name.toLowerCase() === d.client_name.toLowerCase()));
-          const hasPaymentInRange = plan && (receipts || []).some((r) => r.payment_plan_id === plan.id && r.success && isInDateRange(r.received_at, dateRange.start, dateRange.end));
+          // Check for payment activity in range - match plan by deal_id or client name
+          const dealName = (d.client_name || '').toLowerCase();
+          const plan = paymentPlans.find((p) =>
+            p.deal_id === d.id ||
+            (p.client_name && dealName && p.client_name.toLowerCase() === dealName) ||
+            (p.client_name && dealName && (p.client_name.toLowerCase().includes(dealName) || dealName.includes(p.client_name.toLowerCase())))
+          );
+          // Check receipts linked to plan OR matching client name directly
+          const hasPaymentInRange = (receipts || []).some((r) =>
+            r.success &&
+            isInDateRange(r.received_at, dateRange.start, dateRange.end) &&
+            (
+              (plan && r.payment_plan_id === plan.id) ||
+              (r.client_name && dealName && r.client_name.toLowerCase() === dealName)
+            )
+          );
           if (!hasPaymentInRange) return false;
         }
       }
