@@ -27,6 +27,8 @@ export default function PaymentPlans() {
   const { data: deals } = useQuery('deals');
 
   const [markingPaid, setMarkingPaid] = useState(null);
+  const [paymentDatePrompt, setPaymentDatePrompt] = useState(null);
+  const [paymentDate, setPaymentDate] = useState('');
   const [editingPlan, setEditingPlan] = useState(null);
   const [planForm, setPlanForm] = useState({});
   const [savingPlan, setSavingPlan] = useState(false);
@@ -112,21 +114,27 @@ export default function PaymentPlans() {
   const collectedInRange = useMemo(() => filteredReceipts.filter((r) => r.success).reduce((sum, r) => sum + Number(r.amount), 0), [filteredReceipts]);
   const failedInRange = useMemo(() => filteredReceipts.filter((r) => !r.success).length, [filteredReceipts]);
 
-  async function handleMarkPaid(plan) {
+  function promptMarkPaid(plan) {
+    setPaymentDatePrompt(plan);
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+  }
+
+  async function handleMarkPaid(plan, dateStr) {
+    setPaymentDatePrompt(null);
     setMarkingPaid(plan.id);
     try {
       const newCollected = Number(plan.total_collected) + Number(plan.monthly_amount);
       const newMonthsRemaining = Math.max(0, plan.months_remaining - 1);
       const nextDue = new Date(plan.next_due_date);
       nextDue.setMonth(nextDue.getMonth() + 1);
-      const today = new Date().toISOString().split('T')[0];
+      const paidDate = dateStr || new Date().toISOString().split('T')[0];
 
       let newStatus = 'active';
       if (newMonthsRemaining === 0 || newCollected >= Number(plan.total_value)) {
         newStatus = 'completed';
       }
 
-      // Record payment receipt
+      // Record payment receipt with specified date
       await insertRow('payment_receipts', {
         client_name: plan.client_name,
         amount: Number(plan.monthly_amount),
@@ -134,18 +142,19 @@ export default function PaymentPlans() {
         payment_plan_id: plan.id,
         deal_id: plan.deal_id || null,
         matched: true,
+        received_at: new Date(paidDate).toISOString(),
       });
 
       await updateRow('payment_plans', plan.id, {
         total_collected: newCollected,
         months_remaining: newMonthsRemaining,
         next_due_date: nextDue.toISOString().split('T')[0],
-        last_payment_date: today,
+        last_payment_date: paidDate,
         last_payment_confirmed: true,
         status: newStatus,
       });
 
-      toast.success(`Payment recorded for ${plan.client_name}`);
+      toast.success(`Payment recorded for ${plan.client_name} on ${paidDate}`);
       refetch();
       refetchReceipts();
     } catch (err) {
@@ -236,7 +245,7 @@ export default function PaymentPlans() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleMarkPaid(row);
+                promptMarkPaid(row);
               }}
               disabled={markingPaid === val}
               className="bg-brand-cyan/10 text-brand-cyan px-3 py-1 rounded-lg text-xs font-medium hover:bg-brand-cyan/20 transition-colors disabled:opacity-50"
@@ -400,6 +409,34 @@ export default function PaymentPlans() {
           </button>
         </form>
       </SlideOver>
+
+      {/* Payment date prompt */}
+      {paymentDatePrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setPaymentDatePrompt(null)}>
+          <div className="bg-[#1a1d20] border border-gray-700 rounded-xl p-6 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold">Record Payment</h3>
+            <p className="text-xs text-gray-400">{paymentDatePrompt.client_name} — {formatCurrency(paymentDatePrompt.monthly_amount)}</p>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Payment Date</label>
+              <input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleMarkPaid(paymentDatePrompt, paymentDate)}
+                className="flex-1 bg-brand-cyan text-white py-2 rounded-lg text-sm font-medium hover:bg-brand-mid transition-colors"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => setPaymentDatePrompt(null)}
+                className="flex-1 bg-white/5 text-gray-400 py-2 rounded-lg text-sm font-medium hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
