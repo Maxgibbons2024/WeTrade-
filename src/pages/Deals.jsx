@@ -45,6 +45,7 @@ export default function Deals() {
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
+  const [viewingDeal, setViewingDeal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
 
@@ -345,9 +346,154 @@ export default function Deals() {
       <SortableTable
         columns={columns}
         data={filtered}
-        onRowClick={(row) => handleEditDeal(row)}
+        onRowClick={(row) => setViewingDeal(row)}
       />
 
+
+      {/* Client detail slide-over */}
+      <SlideOver open={!!viewingDeal} onClose={() => setViewingDeal(null)} title={viewingDeal ? viewingDeal.client_name : ''}>
+        {viewingDeal && (() => {
+          const deal = viewingDeal;
+          const plan = paymentPlans.find((p) => p.deal_id === deal.id || (p.client_name && deal.client_name && p.client_name.toLowerCase() === deal.client_name.toLowerCase()));
+          const dealReceipts = (receipts || []).filter((r) => {
+            if (plan && r.payment_plan_id === plan.id) return true;
+            if (r.client_name && deal.client_name && r.client_name.toLowerCase() === deal.client_name.toLowerCase()) return true;
+            return false;
+          }).sort((a, b) => new Date(b.received_at) - new Date(a.received_at));
+          const successfulPayments = dealReceipts.filter((r) => r.success);
+          const failedPayments = dealReceipts.filter((r) => !r.success);
+          const isPP = Number(deal.monthly_amount) > 0;
+
+          return (
+            <div className="space-y-5">
+              {/* Header info */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CloserAvatar closerId={deal.closer_id} size="lg" />
+                  <div>
+                    <p className="text-sm text-gray-400">{deal.closer_name}</p>
+                    <p className="text-xs text-gray-600">{deal.programme}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setViewingDeal(null); handleEditDeal(deal); }}
+                  className="bg-white/5 text-gray-400 px-3 py-1.5 rounded-lg text-xs font-medium hover:text-white transition-colors border border-gray-800"
+                >
+                  Edit Deal
+                </button>
+              </div>
+
+              {/* Deal summary */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Deal Date</p>
+                  <p className="text-sm font-semibold">{formatDate(deal.created_at)}</p>
+                </div>
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Type</p>
+                  <p className="text-sm font-semibold">{isPP ? <span className="text-amber-400">Payment Plan</span> : <span className="text-green-400">Paid in Full</span>}</p>
+                </div>
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Front End</p>
+                  <p className="text-sm font-semibold text-brand-cyan">{formatCurrency(deal.front_end)}</p>
+                </div>
+                {isPP && (
+                  <div className="bg-brand-dark rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Monthly</p>
+                    <p className="text-sm font-semibold">{formatCurrency(deal.monthly_amount)}/mo</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment plan details */}
+              {plan && (
+                <div className="bg-brand-dark rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs text-gray-500 font-medium">Payment Plan</h4>
+                    <StatusBadge status={plan.status} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500">Collected</p>
+                      <p className="text-sm font-semibold text-green-400">{formatCurrency(plan.total_collected)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Total Value</p>
+                      <p className="text-sm font-semibold">{formatCurrency(plan.total_value)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Remaining</p>
+                      <p className="text-sm font-semibold text-amber-400">{formatCurrency(Number(plan.total_value) - Number(plan.total_collected))}</p>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div>
+                    <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${Math.min(100, (Number(plan.total_collected) / Number(plan.total_value)) * 100)}%` }} />
+                    </div>
+                    <p className="text-[10px] text-gray-600 mt-1">{Math.round((Number(plan.total_collected) / Number(plan.total_value)) * 100)}% collected</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500">Next Due</p>
+                      <p className="text-sm font-medium">{formatDate(plan.next_due_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Months Left</p>
+                      <p className="text-sm font-medium">{plan.months_remaining}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Payment history */}
+              <div>
+                <h4 className="text-xs text-gray-500 font-medium mb-2">Payment History ({successfulPayments.length} payment{successfulPayments.length !== 1 ? 's' : ''})</h4>
+                {dealReceipts.length === 0 ? (
+                  <p className="text-xs text-gray-600 py-2">No payments recorded</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {dealReceipts.map((r) => (
+                      <div key={r.id} className="flex items-center justify-between bg-brand-dark rounded-lg px-3 py-2">
+                        <span className="text-xs text-gray-400">{formatDate(r.received_at)}</span>
+                        <span className={`text-sm font-semibold ${r.success ? 'text-green-400' : 'text-red-400'}`}>{formatCurrency(r.amount)}</span>
+                        <span className={`text-xs font-medium ${r.success ? 'text-green-400' : 'text-red-400'}`}>{r.success ? 'Paid' : 'Failed'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {failedPayments.length > 0 && (
+                  <p className="text-xs text-red-400 mt-2">{failedPayments.length} failed payment{failedPayments.length !== 1 ? 's' : ''}</p>
+                )}
+              </div>
+
+              {/* Additional info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Source</p>
+                  <p className="text-sm font-medium capitalize">{deal.source}</p>
+                </div>
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Payment Method</p>
+                  <p className="text-sm font-medium capitalize">{deal.payment_method?.replace('_', ' ')}</p>
+                </div>
+              </div>
+              {deal.onboarding_date && (
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Onboarding</p>
+                  <p className="text-sm font-medium">{formatDate(deal.onboarding_date)}{deal.onboarding_assigned_to ? ` — ${deal.onboarding_assigned_to}` : ''}</p>
+                </div>
+              )}
+              {deal.notes && (
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Notes</p>
+                  <p className="text-sm text-gray-300">{deal.notes}</p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </SlideOver>
 
       {/* Add deal slide-over form */}
       <SlideOver open={showForm} onClose={() => { setShowForm(false); setEditingDeal(null); setForm(EMPTY_FORM); }} title={editingDeal ? `Edit: ${editingDeal.client_name}` : 'Add New Deal'}>
