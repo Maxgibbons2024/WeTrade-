@@ -65,6 +65,24 @@ export function isInDateRange(dateStr, start, end) {
   return d >= start && d <= end;
 }
 
+export function formatDuration(startDate, endDate) {
+  if (!startDate || !endDate) return null;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffMs = end - start;
+  if (diffMs < 0) return null;
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'Same day';
+  if (days === 1) return '1 day';
+  if (days < 7) return `${days} days`;
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return '1 week';
+  if (days < 30) return `${weeks} weeks`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return '1 month';
+  return `${months} months`;
+}
+
 export function calcDelta(current, previous) {
   if (!previous || previous === 0) return null;
   const pct = Math.round(((current - previous) / previous) * 100);

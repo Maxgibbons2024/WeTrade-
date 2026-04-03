@@ -77,6 +77,58 @@ export default function Overview() {
   // Overdue payments (always current, not filtered by date)
   const overduePayments = useMemo(() => paymentPlans.filter((p) => p.status === 'overdue'), [paymentPlans]);
 
+  // Revenue at risk - aging buckets
+  const agingBuckets = useMemo(() => {
+    const now = new Date();
+    const buckets = [
+      { label: '1-7 days', min: 1, max: 7, plans: [], total: 0 },
+      { label: '8-14 days', min: 8, max: 14, plans: [], total: 0 },
+      { label: '15-30 days', min: 15, max: 30, plans: [], total: 0 },
+      { label: '30+ days', min: 31, max: Infinity, plans: [], total: 0 },
+    ];
+    overduePayments.forEach((p) => {
+      const daysOverdue = Math.floor((now - new Date(p.next_due_date)) / (1000 * 60 * 60 * 24));
+      const bucket = buckets.find((b) => daysOverdue >= b.min && daysOverdue <= b.max);
+      if (bucket) {
+        bucket.plans.push(p);
+        bucket.total += Number(p.monthly_amount);
+      }
+    });
+    return buckets;
+  }, [overduePayments]);
+  const totalAtRisk = overduePayments.reduce((sum, p) => sum + Number(p.monthly_amount), 0);
+
+  // Recent failed payments
+  const recentFailed = useMemo(() => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return (receipts || []).filter((r) => !r.success && new Date(r.received_at) >= thirtyDaysAgo);
+  }, [receipts]);
+
+  // Closer leaderboard
+  const leaderboard = useMemo(() => {
+    if (!sheetData) return [];
+    return ['lloyd', 'dave', 'zak'].map((closerId) => {
+      const closer = CLOSERS.find((c) => c.id === closerId);
+      const closerDeals = rangeDeals.filter((d) => d.closer_id === closerId);
+      const revenue = closerDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+      const pifCount = closerDeals.filter((d) => !Number(d.monthly_amount)).length;
+      const pifRatio = closerDeals.length > 0 ? pifCount / closerDeals.length : 0;
+
+      const stats = sheetData[closerId];
+      const scheduled = stats && !stats.error ? (stats.metrics['SCHEDULED Consults']?.total ?? 0) : 0;
+      const live = stats && !stats.error ? (stats.metrics['LIVE Consults']?.total ?? 0) : 0;
+      const closes = stats && !stats.error ? (stats.metrics['Closes']?.total ?? 0) : 0;
+      const showRate = scheduled > 0 ? live / scheduled : 0;
+      const closeRate = live > 0 ? closes / live : 0;
+
+      // Normalized scoring (each 0-1)
+      const score = (revenue / Math.max(revenue, 1)) * 0.25 + showRate * 0.25 + closeRate * 0.25 + pifRatio * 0.25;
+
+      return { ...closer, revenue, closesCount: closerDeals.length, showRate, closeRate, pifRatio, score, scheduled, live, closes };
+    }).sort((a, b) => b.score - a.score);
+  }, [sheetData, rangeDeals]);
+
   // Weekly revenue chart data
   const chartData = useMemo(() => {
     const weeks = [];
@@ -238,6 +290,75 @@ export default function Overview() {
         <div className="h-64">
           <Bar data={chartData} options={chartOptions} />
         </div>
+      </div>
+
+      {/* Revenue at Risk & Leaderboard */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Revenue at Risk */}
+        {overduePayments.length > 0 && (
+          <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-red-400">Revenue at Risk</h3>
+              <span className="text-lg font-bold text-red-400">{formatCurrency(totalAtRisk)}</span>
+            </div>
+            <div className="space-y-2 mb-4">
+              {agingBuckets.map((bucket) => bucket.plans.length > 0 && (
+                <div key={bucket.label} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-1">
+                    <span className="text-xs text-gray-500 w-20">{bucket.label}</span>
+                    <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-400/60 rounded-full" style={{ width: `${totalAtRisk > 0 ? (bucket.total / totalAtRisk) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-red-400 ml-2 w-16 text-right">{formatCurrency(bucket.total)}</span>
+                  <span className="text-[10px] text-gray-600 ml-1 w-12 text-right">{bucket.plans.length} plan{bucket.plans.length !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
+            {recentFailed.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 font-medium mb-2">Failed Payments (30d)</p>
+                <div className="space-y-1">
+                  {recentFailed.slice(0, 5).map((r) => (
+                    <div key={r.id} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-400">{r.client_name}</span>
+                      <span className="text-red-400 font-semibold">{formatCurrency(r.amount)}</span>
+                      <span className="text-gray-600">{formatDate(r.received_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Closer Leaderboard */}
+        {leaderboard.length > 0 && (
+          <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+            <h3 className="text-sm font-medium text-gray-400 mb-4">Closer Leaderboard ({sheetMonth})</h3>
+            <div className="space-y-3">
+              {leaderboard.map((closer, i) => (
+                <div key={closer.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
+                  <span className={`text-lg font-bold w-6 ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-gray-400' : 'text-amber-700'}`}>{i + 1}</span>
+                  <CloserAvatar closerId={closer.id} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{closer.name}</p>
+                    <div className="flex gap-3 mt-1">
+                      <span className="text-[10px] text-gray-500">{formatCurrency(closer.revenue)} rev</span>
+                      <span className="text-[10px] text-gray-500">{Math.round(closer.showRate * 100)}% show</span>
+                      <span className="text-[10px] text-gray-500">{Math.round(closer.closeRate * 100)}% close</span>
+                      <span className="text-[10px] text-gray-500">{Math.round(closer.pifRatio * 100)}% PIF</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-brand-cyan">{closer.closesCount}</p>
+                    <p className="text-[10px] text-gray-500">closes</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

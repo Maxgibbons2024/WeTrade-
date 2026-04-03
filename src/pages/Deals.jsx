@@ -7,10 +7,11 @@ import SlideOver from '../components/SlideOver';
 import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
-import { useQuery, useRealtime, insertRow, updateRow } from '../hooks/useSupabase';
+import { useQuery, useRealtime, insertRow } from '../hooks/useSupabase';
 import {
   formatCurrency,
   formatDate,
+  formatDuration,
   isInDateRange,
   CLOSERS,
   PROGRAMMES,
@@ -26,13 +27,12 @@ const EMPTY_FORM = {
   closer_name: 'Lloyd',
   front_end: '',
   monthly_amount: '',
-  total_paid: '',
-  total_deal_size: '',
   programme: 'Kickstarter',
   source: 'manual',
   payment_method: 'stripe',
   onboarding_date: '',
   onboarding_assigned_to: '',
+  call_booked_at: '',
   notes: '',
   status: 'active',
 };
@@ -40,12 +40,10 @@ const EMPTY_FORM = {
 export default function Deals() {
   const [filterCloser, setFilterCloser] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [search, setSearch] = useState('');
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
-  const [expandedDeal, setExpandedDeal] = useState(null);
+  const [viewingDeal, setViewingDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
-  const [viewingDeal, setViewingDeal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
 
@@ -53,47 +51,30 @@ export default function Deals() {
     order: { column: 'created_at', ascending: false },
   });
   const { data: paymentPlans } = useQuery('payment_plans');
+  const { data: receipts } = useQuery('payment_receipts', { order: { column: 'received_at', ascending: false } });
   const { data: fathomCalls } = useQuery('fathom_calls');
-  const { data: receipts } = useQuery('payment_receipts', {
-    order: { column: 'received_at', ascending: false },
-  });
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
   useRealtime('deals', handleRealtime);
 
-  // Apply filters
+  // Apply filters — show deals created in range OR with payment activity in range
   const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
     return deals.filter((d) => {
       if (filterCloser !== 'all' && d.closer_id !== filterCloser) return false;
       if (filterStatus !== 'all' && d.status !== filterStatus) return false;
-      if (q && !d.client_name?.toLowerCase().includes(q) && !d.closer_name?.toLowerCase().includes(q)) return false;
-      if (!q && dateRange.start) {
-        // Show deal if it was created in range OR had a payment in range
-        const createdInRange = isInDateRange(d.created_at, dateRange.start, dateRange.end);
-        if (!createdInRange) {
-          // Check for payment activity in range - match plan by deal_id or client name
-          const dealName = (d.client_name || '').toLowerCase();
-          const plan = paymentPlans.find((p) =>
-            p.deal_id === d.id ||
-            (p.client_name && dealName && p.client_name.toLowerCase() === dealName) ||
-            (p.client_name && dealName && (p.client_name.toLowerCase().includes(dealName) || dealName.includes(p.client_name.toLowerCase())))
-          );
-          // Check receipts linked to plan OR matching client name directly
-          const hasPaymentInRange = (receipts || []).some((r) =>
-            r.success &&
-            isInDateRange(r.received_at, dateRange.start, dateRange.end) &&
-            (
-              (plan && r.payment_plan_id === plan.id) ||
-              (r.client_name && dealName && r.client_name.toLowerCase() === dealName)
-            )
-          );
-          if (!hasPaymentInRange) return false;
-        }
-      }
-      return true;
+      const inDateRange = isInDateRange(d.created_at, dateRange.start, dateRange.end);
+      if (inDateRange) return true;
+      // Also show if there's payment activity in the date range
+      const dealName = d.client_name?.toLowerCase();
+      const plan = paymentPlans?.find((p) => p.deal_id === d.id || (p.client_name && dealName && p.client_name.toLowerCase() === dealName));
+      const hasPaymentInRange = (receipts || []).some((r) =>
+        r.success &&
+        isInDateRange(r.received_at, dateRange.start, dateRange.end) &&
+        ((plan && r.payment_plan_id === plan.id) || (r.client_name && dealName && r.client_name.toLowerCase() === dealName))
+      );
+      return hasPaymentInRange;
     });
-  }, [deals, filterCloser, filterStatus, dateRange, search, paymentPlans, receipts]);
+  }, [deals, filterCloser, filterStatus, dateRange, paymentPlans, receipts]);
 
   const columns = [
     {
@@ -111,37 +92,35 @@ export default function Deals() {
         </div>
       ),
     },
-    { key: 'payment_type', label: 'Type', render: (_, row) => Number(row.monthly_amount) > 0 ? <span className="text-xs font-medium text-amber-400">PP</span> : <span className="text-xs font-medium text-green-400">PIF</span> },
     { key: 'front_end', label: 'FE', render: (val) => <span className="text-brand-cyan font-semibold">{formatCurrency(val)}</span> },
     { key: 'monthly_amount', label: 'Monthly', render: (val) => Number(val) > 0 ? `${formatCurrency(val)}/mo` : '—' },
+    { key: 'programme', label: 'Programme' },
     {
-      key: 'pp_status',
+      key: 'id',
       label: 'PP Status',
-      render: (_, row) => {
-        if (!Number(row.monthly_amount)) return <span className="text-xs text-gray-600">—</span>;
-        const plan = paymentPlans.find((p) => p.deal_id === row.id || (p.client_name && row.client_name && p.client_name.toLowerCase() === row.client_name.toLowerCase()));
-        if (!plan) return <span className="text-xs text-gray-600">No plan</span>;
+      render: (val, row) => {
+        const plan = paymentPlans?.find((p) => p.deal_id === val || (p.client_name && row.client_name && p.client_name.toLowerCase() === row.client_name.toLowerCase()));
+        if (!plan) return <span className="text-gray-600 text-xs">—</span>;
         return (
-          <div>
+          <div className="flex items-center gap-1.5">
             <StatusBadge status={plan.status} />
-            <p className="text-[10px] text-gray-500 mt-0.5">{formatCurrency(plan.total_collected)} / {formatCurrency(plan.total_value)}</p>
+            <span className="text-[10px] text-gray-500">{formatCurrency(plan.total_collected)}/{formatCurrency(plan.total_value)}</span>
           </div>
         );
       },
     },
     {
-      key: 'last_payment',
+      key: 'created_at',
       label: 'Last Payment',
-      render: (_, row) => {
-        const plan = paymentPlans.find((p) => p.deal_id === row.id || (p.client_name && row.client_name && p.client_name.toLowerCase() === row.client_name.toLowerCase()));
-        if (!plan) return <span className="text-xs text-gray-600">—</span>;
-        const lastReceipt = (receipts || []).find((r) => r.payment_plan_id === plan.id && r.success);
-        if (lastReceipt) return <span className="text-xs text-green-400">{formatDate(lastReceipt.received_at)}</span>;
-        if (plan.last_payment_date) return <span className="text-xs text-gray-400">{formatDate(plan.last_payment_date)}</span>;
-        return <span className="text-xs text-gray-600">None</span>;
+      render: (val, row) => {
+        const lastReceipt = (receipts || []).find((r) => {
+          const dealName = row.client_name?.toLowerCase();
+          return r.success && (r.client_name?.toLowerCase() === dealName);
+        });
+        if (!lastReceipt) return <span className="text-gray-600 text-xs">—</span>;
+        return <span className="text-xs text-green-400">{formatDate(lastReceipt.received_at)}</span>;
       },
     },
-    { key: 'programme', label: 'Programme' },
     { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val} /> },
   ];
 
@@ -173,6 +152,7 @@ export default function Deals() {
       payment_method: deal.payment_method || 'stripe',
       onboarding_date: deal.onboarding_date ? deal.onboarding_date.slice(0, 16) : '',
       onboarding_assigned_to: deal.onboarding_assigned_to || '',
+      call_booked_at: deal.call_booked_at ? deal.call_booked_at.slice(0, 10) : '',
       notes: deal.notes || '',
       status: deal.status || 'active',
       created_at: deal.created_at ? deal.created_at.slice(0, 10) : '',
@@ -192,112 +172,25 @@ export default function Deals() {
     }
     setSubmitting(true);
     try {
-      const payload = {
-        client_name: form.client_name,
-        closer_id: form.closer_id,
-        closer_name: form.closer_name,
+      await insertRow('deals', {
+        ...form,
         front_end: Number(form.front_end),
         monthly_amount: Number(form.monthly_amount) || 0,
-        programme: form.programme,
-        source: form.source,
-        payment_method: form.payment_method,
         onboarding_date: form.onboarding_date || null,
         onboarding_assigned_to: form.onboarding_assigned_to || null,
+        call_booked_at: form.call_booked_at ? new Date(form.call_booked_at).toISOString() : null,
         notes: form.notes || null,
-        status: form.status,
-      };
-
-      if (form.created_at) {
-        payload.created_at = new Date(form.created_at).toISOString();
-      }
-
-      if (editingDeal) {
-        await updateRow('deals', editingDeal.id, payload);
-
-        // Update or create payment plan if monthly amount changed
-        const monthly = Number(form.monthly_amount) || 0;
-        const existingPlan = paymentPlans.find((p) => p.deal_id === editingDeal.id);
-        if (monthly > 0) {
-          const dealDate = form.created_at ? new Date(form.created_at) : new Date(editingDeal.created_at);
-          const totalValue = Number(form.total_deal_size) || (Number(form.front_end) + (monthly * 12));
-          const totalCollected = Number(form.total_paid) || Number(form.front_end);
-          const totalLeft = Math.max(0, totalValue - totalCollected);
-          const monthsRemaining = monthly > 0 ? Math.ceil(totalLeft / monthly) : 0;
-
-          // Calculate next due date based on deal date + number of payments made
-          const paymentsMade = monthly > 0 ? Math.round((totalCollected - Number(form.front_end)) / monthly) : 0;
-          const nextDue = new Date(dealDate);
-          nextDue.setMonth(nextDue.getMonth() + paymentsMade + 1);
-
-          const planData = {
-            deal_id: editingDeal.id,
-            client_name: form.client_name,
-            closer_id: form.closer_id,
-            monthly_amount: monthly,
-            total_value: totalValue,
-            total_collected: totalCollected,
-            months_remaining: monthsRemaining,
-            next_due_date: nextDue.toISOString().split('T')[0],
-            status: totalLeft === 0 ? 'completed' : nextDue < new Date() ? 'overdue' : 'active',
-          };
-
-          if (existingPlan) {
-            await updateRow('payment_plans', existingPlan.id, planData);
-          } else {
-            await insertRow('payment_plans', planData);
-          }
-        }
-
-        toast.success('Deal updated successfully');
-      } else {
-        const result = await insertRow('deals', payload);
-
-        // Auto-create payment plan if monthly amount > 0
-        const monthly = Number(form.monthly_amount) || 0;
-        if (monthly > 0 && result && result[0]) {
-          const deal = result[0];
-          const dealDate = new Date(deal.created_at);
-          const totalValue = Number(form.total_deal_size) || (Number(form.front_end) + (monthly * 12));
-          const totalCollected = Number(form.total_paid) || Number(form.front_end);
-          const totalLeft = Math.max(0, totalValue - totalCollected);
-          const monthsRemaining = monthly > 0 ? Math.ceil(totalLeft / monthly) : 0;
-
-          // Calculate next due date based on deal date + number of payments made
-          const paymentsMade = monthly > 0 ? Math.round((totalCollected - Number(form.front_end)) / monthly) : 0;
-          const nextDue = new Date(dealDate);
-          nextDue.setMonth(nextDue.getMonth() + paymentsMade + 1);
-
-          await insertRow('payment_plans', {
-            deal_id: deal.id,
-            client_name: form.client_name,
-            closer_id: form.closer_id,
-            monthly_amount: monthly,
-            total_value: totalValue,
-            total_collected: totalCollected,
-            months_remaining: monthsRemaining,
-            next_due_date: nextDue.toISOString().split('T')[0],
-            status: totalLeft === 0 ? 'completed' : nextDue < new Date() ? 'overdue' : 'active',
-          });
-        }
-
-        toast.success('Deal added successfully');
-      }
+      });
+      toast.success('Deal added successfully');
       setForm(EMPTY_FORM);
-      setEditingDeal(null);
       setShowForm(false);
       refetch();
     } catch (err) {
-      toast.error(`Failed to ${editingDeal ? 'update' : 'add'} deal: ${err.message}`);
+      toast.error(`Failed to add deal: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
   }
-
-  // Expanded deal details
-  const dealPlan = expandedDeal ? paymentPlans.find((p) => p.deal_id === expandedDeal.id) : null;
-  const dealFathom = expandedDeal
-    ? fathomCalls.filter((f) => f.closer_id === expandedDeal.closer_id && f.call_date === new Date(expandedDeal.created_at).toISOString().split('T')[0])
-    : [];
 
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error} />;
@@ -307,7 +200,7 @@ export default function Deals() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold">Deals</h2>
         <button
-          onClick={() => { setEditingDeal(null); setForm(EMPTY_FORM); setShowForm(true); }}
+          onClick={() => setShowForm(true)}
           className="bg-brand-cyan text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-mid transition-colors"
         >
           + Add Deal
@@ -318,13 +211,6 @@ export default function Deals() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search client or closer..."
-          className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan w-56"
-        />
         <select
           value={filterCloser}
           onChange={(e) => setFilterCloser(e.target.value)}
@@ -388,6 +274,14 @@ export default function Deals() {
                 <div className="bg-brand-dark rounded-lg p-3">
                   <p className="text-xs text-gray-500">Deal Date</p>
                   <p className="text-sm font-semibold">{formatDate(deal.created_at)}</p>
+                </div>
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Call Booked</p>
+                  <p className="text-sm font-semibold">{deal.call_booked_at ? formatDate(deal.call_booked_at) : <span className="text-gray-600">Not set</span>}</p>
+                </div>
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Time to Close</p>
+                  <p className="text-sm font-semibold">{deal.call_booked_at ? <span className="text-brand-cyan">{formatDuration(deal.call_booked_at, deal.created_at)}</span> : <span className="text-gray-600">—</span>}</p>
                 </div>
                 <div className="bg-brand-dark rounded-lg p-3">
                   <p className="text-xs text-gray-500">Type</p>
@@ -496,7 +390,7 @@ export default function Deals() {
       </SlideOver>
 
       {/* Add deal slide-over form */}
-      <SlideOver open={showForm} onClose={() => { setShowForm(false); setEditingDeal(null); setForm(EMPTY_FORM); }} title={editingDeal ? `Edit: ${editingDeal.client_name}` : 'Add New Deal'}>
+      <SlideOver open={showForm} onClose={() => setShowForm(false)} title="Add New Deal">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Client Name *</label>
@@ -508,15 +402,27 @@ export default function Deals() {
               className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
             />
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
-            <input
-              name="created_at"
-              type="date"
-              value={form.created_at || ''}
-              onChange={handleFormChange}
-              className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
+              <input
+                name="created_at"
+                type="date"
+                value={form.created_at || ''}
+                onChange={handleFormChange}
+                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Call Booked Date</label>
+              <input
+                name="call_booked_at"
+                type="date"
+                value={form.call_booked_at || ''}
+                onChange={handleFormChange}
+                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -542,18 +448,6 @@ export default function Deals() {
               <input name="monthly_amount" type="number" min="0" step="1" value={form.monthly_amount} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
             </div>
           </div>
-          {Number(form.monthly_amount) > 0 && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Total Deal Size (£)</label>
-                <input name="total_deal_size" type="number" min="0" step="1" value={form.total_deal_size} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Total Paid (£)</label>
-                <input name="total_paid" type="number" min="0" step="1" value={form.total_paid} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
-              </div>
-            </div>
-          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Source</label>
@@ -591,7 +485,7 @@ export default function Deals() {
             disabled={submitting}
             className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50"
           >
-            {submitting ? 'Saving...' : editingDeal ? 'Update Deal' : 'Save Deal'}
+            {submitting ? 'Saving...' : 'Save Deal'}
           </button>
         </form>
       </SlideOver>

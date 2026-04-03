@@ -20,7 +20,8 @@ create table if not exists deals (
   payment_method text not null default 'stripe' check (payment_method in ('stripe','paypal','bank_transfer','mamo')),
   notes text,
   status text not null default 'active' check (status in ('onboarding','active','follow_up','lost')),
-  stripe_payment_id text
+  stripe_payment_id text,
+  call_booked_at timestamptz
 );
 
 create table if not exists payment_plans (
