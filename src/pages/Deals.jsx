@@ -41,7 +41,7 @@ export default function Deals() {
   const [filterCloser, setFilterCloser] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
-  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
+  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
   const [expandedDeal, setExpandedDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
@@ -53,6 +53,9 @@ export default function Deals() {
   });
   const { data: paymentPlans } = useQuery('payment_plans');
   const { data: fathomCalls } = useQuery('fathom_calls');
+  const { data: receipts } = useQuery('payment_receipts', {
+    order: { column: 'received_at', ascending: false },
+  });
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
   useRealtime('deals', handleRealtime);
@@ -88,10 +91,34 @@ export default function Deals() {
     { key: 'payment_type', label: 'Type', render: (_, row) => Number(row.monthly_amount) > 0 ? <span className="text-xs font-medium text-amber-400">PP</span> : <span className="text-xs font-medium text-green-400">PIF</span> },
     { key: 'front_end', label: 'FE', render: (val) => <span className="text-brand-cyan font-semibold">{formatCurrency(val)}</span> },
     { key: 'monthly_amount', label: 'Monthly', render: (val) => Number(val) > 0 ? `${formatCurrency(val)}/mo` : '—' },
+    {
+      key: 'pp_status',
+      label: 'PP Status',
+      render: (_, row) => {
+        if (!Number(row.monthly_amount)) return <span className="text-xs text-gray-600">—</span>;
+        const plan = paymentPlans.find((p) => p.deal_id === row.id || (p.client_name && row.client_name && p.client_name.toLowerCase() === row.client_name.toLowerCase()));
+        if (!plan) return <span className="text-xs text-gray-600">No plan</span>;
+        return (
+          <div>
+            <StatusBadge status={plan.status} />
+            <p className="text-[10px] text-gray-500 mt-0.5">{formatCurrency(plan.total_collected)} / {formatCurrency(plan.total_value)}</p>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'last_payment',
+      label: 'Last Payment',
+      render: (_, row) => {
+        const plan = paymentPlans.find((p) => p.deal_id === row.id || (p.client_name && row.client_name && p.client_name.toLowerCase() === row.client_name.toLowerCase()));
+        if (!plan) return <span className="text-xs text-gray-600">—</span>;
+        const lastReceipt = (receipts || []).find((r) => r.payment_plan_id === plan.id && r.success);
+        if (lastReceipt) return <span className="text-xs text-green-400">{formatDate(lastReceipt.received_at)}</span>;
+        if (plan.last_payment_date) return <span className="text-xs text-gray-400">{formatDate(plan.last_payment_date)}</span>;
+        return <span className="text-xs text-gray-600">None</span>;
+      },
+    },
     { key: 'programme', label: 'Programme' },
-    { key: 'source', label: 'Source', render: (val) => <span className="capitalize text-xs">{val}</span> },
-    { key: 'payment_method', label: 'Payment', render: (val) => <span className="capitalize text-xs">{val?.replace('_', ' ')}</span> },
-    { key: 'onboarding_date', label: 'Onboarding', render: (val) => formatDate(val) },
     { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val} /> },
   ];
 
