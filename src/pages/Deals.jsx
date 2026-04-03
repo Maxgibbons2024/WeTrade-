@@ -67,10 +67,19 @@ export default function Deals() {
       if (filterCloser !== 'all' && d.closer_id !== filterCloser) return false;
       if (filterStatus !== 'all' && d.status !== filterStatus) return false;
       if (q && !d.client_name?.toLowerCase().includes(q) && !d.closer_name?.toLowerCase().includes(q)) return false;
-      if (!q && !isInDateRange(d.created_at, dateRange.start, dateRange.end)) return false;
+      if (!q && dateRange.start) {
+        // Show deal if it was created in range OR had a payment in range
+        const createdInRange = isInDateRange(d.created_at, dateRange.start, dateRange.end);
+        if (!createdInRange) {
+          // Check for payment activity in range
+          const plan = paymentPlans.find((p) => p.deal_id === d.id || (p.client_name && d.client_name && p.client_name.toLowerCase() === d.client_name.toLowerCase()));
+          const hasPaymentInRange = plan && (receipts || []).some((r) => r.payment_plan_id === plan.id && r.success && isInDateRange(r.received_at, dateRange.start, dateRange.end));
+          if (!hasPaymentInRange) return false;
+        }
+      }
       return true;
     });
-  }, [deals, filterCloser, filterStatus, dateRange, search]);
+  }, [deals, filterCloser, filterStatus, dateRange, search, paymentPlans, receipts]);
 
   const columns = [
     {
