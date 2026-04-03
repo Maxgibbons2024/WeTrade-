@@ -284,6 +284,48 @@ export default function Closers() {
                     </div>
                   </div>
 
+                  {/* Conversion Funnel */}
+                  {sheetData && sheetData[stat.id] && !sheetData[stat.id].error && (() => {
+                    const m = sheetData[stat.id].metrics;
+                    const scheduled = m['SCHEDULED Consults']?.total ?? 0;
+                    const live = m['LIVE Consults']?.total ?? 0;
+                    const offers = m['Offers']?.total ?? 0;
+                    const deposits = m['Deposits']?.total ?? 0;
+                    const closes = m['Closes']?.total ?? 0;
+                    if (scheduled === 0) return null;
+                    const stages = [
+                      { label: 'Scheduled', value: scheduled, color: '#6B7280' },
+                      { label: 'Showed', value: live, color: '#27CCE7' },
+                      { label: 'Offered', value: offers, color: '#F59E0B' },
+                      { label: 'Deposited', value: deposits, color: '#8B5CF6' },
+                      { label: 'Closed', value: closes, color: '#10B981' },
+                    ];
+                    return (
+                      <div>
+                        <h4 className="text-xs text-gray-500 font-medium mb-2">Conversion Funnel ({sheetMonth})</h4>
+                        <div className="space-y-1.5">
+                          {stages.map((stage, i) => {
+                            const pct = scheduled > 0 ? (stage.value / scheduled) * 100 : 0;
+                            const prevVal = i > 0 ? stages[i - 1].value : null;
+                            const dropoff = prevVal && prevVal > 0 ? Math.round((stage.value / prevVal) * 100) : null;
+                            return (
+                              <div key={stage.label} className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-500 w-16 text-right">{stage.label}</span>
+                                <div className="flex-1 h-4 bg-gray-800 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: stage.color }} />
+                                </div>
+                                <span className="text-xs font-semibold w-6 text-right">{stage.value}</span>
+                                {dropoff !== null && (
+                                  <span className={`text-[10px] w-8 text-right ${dropoff < 50 ? 'text-red-400' : 'text-gray-500'}`}>{dropoff}%</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Fathom stats */}
                   {stat.fathomTotalCalls > 0 && (
                     <div className="grid grid-cols-3 gap-3">
