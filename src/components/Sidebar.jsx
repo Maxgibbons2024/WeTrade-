@@ -41,7 +41,7 @@ export default function Sidebar({ activePage, onNavigate }) {
       >
         {/* Logo */}
         <div className="p-6 border-b border-gray-800">
-          <img src="/logo.png" alt="WeTrade" className="h-10 w-auto" />
+          <img src="/wetrade_color_darkgrey%20bg.png" alt="WeTrade" className="h-10 w-auto" />
           <p className="text-xs text-gray-500 mt-2">Sales Dashboard</p>
         </div>
 
