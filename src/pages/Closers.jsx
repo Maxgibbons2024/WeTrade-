@@ -28,15 +28,17 @@ export default function Closers() {
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
-  const currentMonth = monthNames[new Date().getMonth()];
-  const { data: sheetData, loading: sheetsLoading } = useSheetStats(currentMonth);
+  // Use the month from the date range filter's start date
+  const sheetMonth = dateRange.start ? monthNames[dateRange.start.getMonth()] : monthNames[new Date().getMonth()];
+  const { data: sheetData, loading: sheetsLoading } = useSheetStats(sheetMonth);
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
   const { data: eodCalls, loading: el, error: ee } = useQuery('eod_calls');
   const { data: paymentPlans, loading: pl, error: pe } = useQuery('payment_plans');
   const { data: fathomCalls, loading: fl, error: fe } = useQuery('fathom_calls');
+  const { data: receipts, loading: rl } = useQuery('payment_receipts');
 
-  const loading = dl || el || pl || fl;
+  const loading = dl || el || pl || fl || rl;
   const error = de || ee || pe || fe;
 
   const closerStats = useMemo(() => {
@@ -52,7 +54,10 @@ export default function Closers() {
       const showRate = totalCalls > 0 ? Math.round(((totalCalls - noShows) / totalCalls) * 100) : 0;
 
       const rangeRevenue = rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
-      const totalCollected = rangeRevenue + closerPlans.reduce((sum, p) => sum + Number(p.total_collected || 0), 0);
+      // Get PP collections from receipts in date range
+      const rangeReceipts = (receipts || []).filter((r) => r.success && r.payment_plan_id && closerPlans.some((p) => p.id === r.payment_plan_id) && isInDateRange(r.received_at, dateRange.start, dateRange.end));
+      const ppCollected = rangeReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+      const totalCollected = rangeRevenue + ppCollected;
       const closesCount = rangeDeals.length;
       const avgDealSize = closesCount > 0 ? Math.round(rangeRevenue / closesCount) : 0;
 
@@ -89,7 +94,7 @@ export default function Closers() {
         closerPlans,
       };
     });
-  }, [deals, eodCalls, paymentPlans, fathomCalls, dateRange]);
+  }, [deals, eodCalls, paymentPlans, fathomCalls, receipts, dateRange]);
 
   const displayed = filter === 'all' ? closerStats : closerStats.filter((c) => c.id === filter);
 
@@ -375,7 +380,7 @@ export default function Closers() {
                   {/* Daily Call Stats from Google Sheets */}
                   {sheetData && sheetData[stat.id] && !sheetData[stat.id].error && (
                     <div>
-                      <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity ({currentMonth})</h4>
+                      <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity ({sheetMonth})</h4>
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>

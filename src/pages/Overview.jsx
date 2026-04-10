@@ -11,17 +11,22 @@ import { Bar } from 'react-chartjs-2';
 import MetricCard from '../components/MetricCard';
 import DateRangeFilter from '../components/DateRangeFilter';
 import CloserAvatar from '../components/CloserAvatar';
-import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange, calcDelta, CLOSERS, OUTCOME_COLOURS } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, calcDelta, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
+import useSheetStats from '../hooks/useSheetStats';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function Overview() {
   const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const sheetMonth = dateRange.start ? monthNames[dateRange.start.getMonth()] : monthNames[new Date().getMonth()];
+  const { data: sheetData } = useSheetStats(sheetMonth);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -29,34 +34,45 @@ export default function Overview() {
 
   const { data: paymentPlans, loading: plansLoading, error: plansError, refetch: refetchPlans } = useQuery('payment_plans');
 
-  const { data: eodCalls, loading: eodLoading, error: eodError } = useQuery('eod_calls', {
-    order: { column: 'report_date', ascending: false },
-  });
+  const { data: receipts, loading: receiptsLoading } = useQuery('payment_receipts');
 
   const handleRealtimeDeals = useCallback(() => { refetchDeals(); }, [refetchDeals]);
   const handleRealtimePlans = useCallback(() => { refetchPlans(); }, [refetchPlans]);
   useRealtime('deals', handleRealtimeDeals);
   useRealtime('payment_plans', handleRealtimePlans);
 
-  const loading = dealsLoading || plansLoading || eodLoading;
-  const error = dealsError || plansError || eodError;
+  const loading = dealsLoading || plansLoading || receiptsLoading;
+  const error = dealsError || plansError;
 
   // Filtered metrics
   const rangeDeals = useMemo(() => deals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end)), [deals, dateRange]);
-  const rangeCollected = useMemo(() => rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [rangeDeals]);
+  const frontEndCollected = useMemo(() => rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [rangeDeals]);
 
-  const rangeEod = useMemo(() => eodCalls.filter((c) => isInDateRange(c.report_date, dateRange.start, dateRange.end)), [eodCalls, dateRange]);
-  const totalCalls = rangeEod.length;
-  const noShows = rangeEod.filter((c) => c.outcome === 'no_show').length;
-  const showRate = totalCalls > 0 ? Math.round(((totalCalls - noShows) / totalCalls) * 100) : 0;
+  // Cash collected = front end from deals + successful payment receipts in range
+  const rangeReceipts = useMemo(() => (receipts || []).filter((r) => r.success && isInDateRange(r.received_at, dateRange.start, dateRange.end)), [receipts, dateRange]);
+  const ppCollected = useMemo(() => rangeReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0), [rangeReceipts]);
+  const totalCashCollected = frontEndCollected + ppCollected;
+
+  // Google Sheets call stats (aggregated across all closers)
+  const callStats = useMemo(() => {
+    if (!sheetData) return { scheduled: 0, live: 0, showRate: 0 };
+    let scheduled = 0;
+    let live = 0;
+    for (const closerId of ['lloyd', 'dave', 'zak']) {
+      const closer = sheetData[closerId];
+      if (!closer || closer.error) continue;
+      const sched = closer.metrics['SCHEDULED Consults'];
+      const liveM = closer.metrics['LIVE Consults'];
+      if (sched && sched.total != null) scheduled += sched.total;
+      if (liveM && liveM.total != null) live += liveM.total;
+    }
+    const showRate = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
+    return { scheduled, live, showRate };
+  }, [sheetData]);
 
   // Compare metrics
   const compareDeals = useMemo(() => compareRange ? deals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [deals, compareRange]);
   const compareCollected = compareDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
-  const compareEod = useMemo(() => compareRange ? eodCalls.filter((c) => isInDateRange(c.report_date, compareRange.start, compareRange.end)) : [], [eodCalls, compareRange]);
-  const compareCalls = compareEod.length;
-  const compareNoShows = compareEod.filter((c) => c.outcome === 'no_show').length;
-  const compareShowRate = compareCalls > 0 ? Math.round(((compareCalls - compareNoShows) / compareCalls) * 100) : 0;
 
   // Overdue payments (always current, not filtered by date)
   const overduePayments = useMemo(() => paymentPlans.filter((p) => p.status === 'overdue'), [paymentPlans]);
@@ -193,19 +209,6 @@ export default function Overview() {
     },
   };
 
-  // Today's EOD grouped by closer
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayEod = useMemo(() => {
-    const grouped = {};
-    eodCalls
-      .filter((c) => c.report_date === todayStr)
-      .forEach((c) => {
-        if (!grouped[c.closer_id]) grouped[c.closer_id] = { closer_name: c.closer_name, closer_id: c.closer_id, calls: [] };
-        grouped[c.closer_id].calls.push(c);
-      });
-    return Object.values(grouped);
-  }, [eodCalls, todayStr]);
-
   // Recent deals (last 10)
   const recentDeals = useMemo(() => deals.slice(0, 10), [deals]);
 
@@ -244,20 +247,29 @@ export default function Overview() {
       )}
 
       {/* Metric cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <MetricCard
-          title="Collected"
-          value={formatCurrency(rangeCollected)}
-          delta={compareEnabled ? calcDelta(rangeCollected, compareCollected) : null}
+          title="Cash Collected"
+          value={formatCurrency(totalCashCollected)}
           accent
+          subtitle={ppCollected > 0 ? `${formatCurrency(frontEndCollected)} FE + ${formatCurrency(ppCollected)} PP` : `${formatCurrency(frontEndCollected)} front end`}
+        />
+        <MetricCard
+          title="Calls Booked"
+          value={callStats.scheduled}
+          subtitle={sheetMonth}
+        />
+        <MetricCard
+          title="Calls Taken"
+          value={callStats.live}
+          subtitle={sheetMonth}
         />
         <MetricCard
           title="Show Rate"
-          value={`${showRate}%`}
-          warning={showRate < 65 && showRate >= 55}
-          danger={showRate < 55}
-          subtitle={`${totalCalls - noShows}/${totalCalls} calls`}
-          delta={compareEnabled ? calcDelta(showRate, compareShowRate) : null}
+          value={`${callStats.showRate}%`}
+          warning={callStats.showRate < 65 && callStats.showRate >= 55}
+          danger={callStats.showRate < 55 && callStats.scheduled > 0}
+          subtitle={`${callStats.live}/${callStats.scheduled} showed`}
         />
         <MetricCard
           title="Deals Closed"
@@ -377,39 +389,36 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* Today's EOD reports */}
+        {/* Call Stats by Closer */}
         <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
-          <h3 className="text-sm font-medium text-gray-400 mb-4">Today&apos;s EOD Reports</h3>
-          {todayEod.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No EOD reports today</p>
+          <h3 className="text-sm font-medium text-gray-400 mb-4">Call Stats ({sheetMonth})</h3>
+          {!sheetData ? (
+            <p className="text-gray-500 text-sm text-center py-4">Loading call data...</p>
           ) : (
             <div className="space-y-4">
-              {todayEod.map((group) => (
-                <div key={group.closer_id}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <CloserAvatar closerId={group.closer_id} size="sm" />
-                    <span className="text-sm font-medium">{group.closer_name}</span>
-                    <span className="text-xs text-gray-500">{group.calls.length} calls</span>
+              {['lloyd', 'dave', 'zak'].map((closerId) => {
+                const closer = CLOSERS.find((c) => c.id === closerId);
+                const stats = sheetData[closerId];
+                if (!closer || !stats || stats.error) return null;
+                const scheduled = stats.metrics['SCHEDULED Consults']?.total ?? 0;
+                const live = stats.metrics['LIVE Consults']?.total ?? 0;
+                const showPct = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
+                const offers = stats.metrics['Offers']?.total ?? 0;
+                const closes = stats.metrics['Closes']?.total ?? 0;
+                return (
+                  <div key={closerId} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
+                    <CloserAvatar closerId={closerId} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{closer.name}</p>
+                      <p className="text-xs text-gray-500">{scheduled} booked · {live} taken · {showPct}% show</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{closes} <span className="text-xs text-gray-500">closes</span></p>
+                      <p className="text-xs text-gray-500">{offers} offers</p>
+                    </div>
                   </div>
-                  <div className="space-y-1.5 pl-8">
-                    {group.calls.map((call) => (
-                      <div key={call.id} className="flex items-center gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: OUTCOME_COLOURS[call.outcome] || '#6B7280' }}
-                        />
-                        <span className="text-sm text-gray-300">{call.client_name}</span>
-                        <StatusBadge status={call.outcome} type="outcome" />
-                        {call.deal_value && (
-                          <span className="text-xs text-brand-cyan font-medium ml-auto">
-                            {formatCurrency(call.deal_value)}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

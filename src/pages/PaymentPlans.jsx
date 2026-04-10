@@ -7,12 +7,13 @@ import CloserAvatar from '../components/CloserAvatar';
 import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
-import { useQuery, useRealtime, updateRow } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange } from '../lib/constants';
+import SlideOver from '../components/SlideOver';
+import { useQuery, useRealtime, updateRow, insertRow } from '../hooks/useSupabase';
+import { formatCurrency, formatDate, isInDateRange, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
 export default function PaymentPlans() {
-  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
+  const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
   const [tab, setTab] = useState('plans');
 
   const { data: plans, loading, error, refetch } = useQuery('payment_plans', {
@@ -23,7 +24,64 @@ export default function PaymentPlans() {
     order: { column: 'received_at', ascending: false },
   });
 
+  const { data: deals } = useQuery('deals');
+
   const [markingPaid, setMarkingPaid] = useState(null);
+  const [paymentDatePrompt, setPaymentDatePrompt] = useState(null);
+  const [paymentDate, setPaymentDate] = useState('');
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [planForm, setPlanForm] = useState({});
+  const [savingPlan, setSavingPlan] = useState(false);
+
+  function handleEditPlan(plan) {
+    const linkedDeal = deals.find((d) => d.id === plan.deal_id)
+      || deals.find((d) => d.client_name && plan.client_name && d.client_name.toLowerCase() === plan.client_name.toLowerCase());
+    const dealDate = linkedDeal ? linkedDeal.created_at.split('T')[0] : '';
+    setEditingPlan({ ...plan, _linkedDealId: linkedDeal?.id || null });
+    setPlanForm({
+      client_name: plan.client_name || '',
+      closer_id: plan.closer_id || '',
+      monthly_amount: plan.monthly_amount ?? '',
+      total_value: plan.total_value ?? '',
+      total_collected: plan.total_collected ?? '',
+      months_remaining: plan.months_remaining ?? '',
+      next_due_date: plan.next_due_date || '',
+      status: plan.status || 'active',
+      notes: plan.notes || '',
+      deal_date: dealDate,
+    });
+  }
+
+  async function handleSavePlan(e) {
+    e.preventDefault();
+    setSavingPlan(true);
+    try {
+      await updateRow('payment_plans', editingPlan.id, {
+        client_name: planForm.client_name,
+        closer_id: planForm.closer_id,
+        monthly_amount: Number(planForm.monthly_amount) || 0,
+        total_value: Number(planForm.total_value) || 0,
+        total_collected: Number(planForm.total_collected) || 0,
+        months_remaining: Number(planForm.months_remaining) || 0,
+        next_due_date: planForm.next_due_date,
+        status: planForm.status,
+        notes: planForm.notes || null,
+      });
+      // Update the linked deal's date if changed
+      if (editingPlan._linkedDealId && planForm.deal_date) {
+        await updateRow('deals', editingPlan._linkedDealId, {
+          created_at: new Date(planForm.deal_date).toISOString(),
+        });
+      }
+      toast.success(`Payment plan updated for ${planForm.client_name}`);
+      setEditingPlan(null);
+      refetch();
+    } catch (err) {
+      toast.error(`Failed: ${err.message}`);
+    } finally {
+      setSavingPlan(false);
+    }
+  }
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
   const handleReceiptsRealtime = useCallback(() => { refetchReceipts(); }, [refetchReceipts]);
@@ -32,57 +90,103 @@ export default function PaymentPlans() {
 
   const filteredPlans = useMemo(() => {
     if (!dateRange.start) return plans;
-    return plans.filter((p) => isInDateRange(p.next_due_date, dateRange.start, dateRange.end));
+    return plans.filter((p) => {
+      // Always show overdue plans regardless of date filter
+      if (p.status === 'overdue') return true;
+      return isInDateRange(p.next_due_date, dateRange.start, dateRange.end);
+    });
   }, [plans, dateRange]);
 
   const activePlans = useMemo(() => plans.filter((p) => p.status !== 'completed'), [plans]);
-  const dueThisMonth = useMemo(() => {
-    const now = new Date();
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return plans.filter((p) => {
-      const due = new Date(p.next_due_date);
-      return due <= monthEnd && due >= now && p.status !== 'completed';
-    });
-  }, [plans]);
-  const overduePlans = useMemo(() => plans.filter((p) => p.status === 'overdue'), [plans]);
-  const pipelineValue = useMemo(() => plans.reduce((sum, p) => sum + (Number(p.total_value) - Number(p.total_collected)), 0), [plans]);
-  const overdueTotal = useMemo(() => overduePlans.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [overduePlans]);
+  const filteredActive = useMemo(() => filteredPlans.filter((p) => p.status !== 'completed'), [filteredPlans]);
+  const filteredOverdue = useMemo(() => filteredPlans.filter((p) => p.status === 'overdue'), [filteredPlans]);
+  const filteredDueTotal = useMemo(() => filteredActive.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredActive]);
+  const filteredOverdueTotal = useMemo(() => filteredOverdue.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredOverdue]);
+  const pipelineValue = useMemo(() => filteredActive.reduce((sum, p) => sum + (Number(p.total_value) - Number(p.total_collected)), 0), [filteredActive]);
 
-  // Receipt metrics
   const unmatchedReceipts = useMemo(() => (receipts || []).filter((r) => !r.matched), [receipts]);
-  const thisMonthReceipts = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return (receipts || []).filter((r) => new Date(r.received_at) >= monthStart);
-  }, [receipts]);
 
-  async function handleMarkPaid(plan) {
+  // Receipts in the current date range
+  const filteredReceipts = useMemo(() => {
+    if (!dateRange.start || !receipts) return receipts || [];
+    return (receipts || []).filter((r) => isInDateRange(r.received_at, dateRange.start, dateRange.end));
+  }, [receipts, dateRange]);
+  const collectedInRange = useMemo(() => filteredReceipts.filter((r) => r.success).reduce((sum, r) => sum + Number(r.amount), 0), [filteredReceipts]);
+  const failedInRange = useMemo(() => filteredReceipts.filter((r) => !r.success).length, [filteredReceipts]);
+
+  function promptMarkPaid(plan) {
+    setPaymentDatePrompt(plan);
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+  }
+
+  async function handleMarkPaid(plan, dateStr) {
+    setPaymentDatePrompt(null);
     setMarkingPaid(plan.id);
     try {
       const newCollected = Number(plan.total_collected) + Number(plan.monthly_amount);
       const newMonthsRemaining = Math.max(0, plan.months_remaining - 1);
       const nextDue = new Date(plan.next_due_date);
       nextDue.setMonth(nextDue.getMonth() + 1);
-      const today = new Date().toISOString().split('T')[0];
+      const paidDate = dateStr || new Date().toISOString().split('T')[0];
 
       let newStatus = 'active';
       if (newMonthsRemaining === 0 || newCollected >= Number(plan.total_value)) {
         newStatus = 'completed';
       }
 
+      // Record payment receipt with specified date
+      await insertRow('payment_receipts', {
+        client_name: plan.client_name,
+        amount: Number(plan.monthly_amount),
+        success: true,
+        payment_plan_id: plan.id,
+        deal_id: plan.deal_id || null,
+        matched: true,
+        received_at: new Date(paidDate).toISOString(),
+      });
+
       await updateRow('payment_plans', plan.id, {
         total_collected: newCollected,
         months_remaining: newMonthsRemaining,
         next_due_date: nextDue.toISOString().split('T')[0],
-        last_payment_date: today,
+        last_payment_date: paidDate,
         last_payment_confirmed: true,
         status: newStatus,
       });
 
-      toast.success(`Payment recorded for ${plan.client_name}`);
+      toast.success(`Payment recorded for ${plan.client_name} on ${paidDate}`);
       refetch();
+      refetchReceipts();
     } catch (err) {
       toast.error(`Failed: ${err.message}`);
+    } finally {
+      setMarkingPaid(null);
+    }
+  }
+
+  async function handleMarkFailed(plan) {
+    setMarkingPaid(plan.id);
+    try {
+      // Record failed payment receipt
+      await insertRow('payment_receipts', {
+        client_name: plan.client_name,
+        amount: Number(plan.monthly_amount),
+        success: false,
+        payment_plan_id: plan.id,
+        deal_id: plan.deal_id || null,
+        matched: true,
+      });
+
+      await updateRow('payment_plans', plan.id, {
+        status: 'overdue',
+        last_payment_confirmed: false,
+      });
+
+      toast.error(`Failed payment logged for ${plan.client_name}`);
+      refetch();
+      refetchReceipts();
+    } catch (err) {
+      toast.error(`Error: ${err.message}`);
     } finally {
       setMarkingPaid(null);
     }
@@ -137,16 +241,28 @@ export default function PaymentPlans() {
       sortable: false,
       render: (val, row) =>
         row.status !== 'completed' ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMarkPaid(row);
-            }}
-            disabled={markingPaid === val}
-            className="bg-brand-cyan/10 text-brand-cyan px-3 py-1 rounded-lg text-xs font-medium hover:bg-brand-cyan/20 transition-colors disabled:opacity-50"
-          >
-            {markingPaid === val ? '...' : 'Mark Paid'}
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                promptMarkPaid(row);
+              }}
+              disabled={markingPaid === val}
+              className="bg-brand-cyan/10 text-brand-cyan px-3 py-1 rounded-lg text-xs font-medium hover:bg-brand-cyan/20 transition-colors disabled:opacity-50"
+            >
+              {markingPaid === val ? '...' : 'Paid'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMarkFailed(row);
+              }}
+              disabled={markingPaid === val}
+              className="bg-red-500/10 text-red-400 px-3 py-1 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50"
+            >
+              Failed
+            </button>
+          </div>
         ) : null,
     },
   ];
@@ -182,18 +298,14 @@ export default function PaymentPlans() {
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Payment Plans</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <MetricCard title="Active Plans" value={activePlans.length} accent />
-        <MetricCard title="Due This Month" value={dueThisMonth.length} subtitle={`${formatCurrency(dueThisMonth.reduce((s, p) => s + Number(p.monthly_amount), 0))} total`} />
-        <MetricCard title="Overdue Total" value={formatCurrency(overdueTotal)} danger={overduePlans.length > 0} subtitle={`${overduePlans.length} plan${overduePlans.length !== 1 ? 's' : ''}`} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+        <MetricCard title="To Collect" value={formatCurrency(filteredDueTotal)} accent subtitle={`${filteredActive.length} plan${filteredActive.length !== 1 ? 's' : ''} due`} />
+        <MetricCard title="Collected" value={formatCurrency(collectedInRange)} subtitle={`${filteredReceipts.filter((r) => r.success).length} payment${filteredReceipts.filter((r) => r.success).length !== 1 ? 's' : ''}`} />
+        <MetricCard title="Plans Due" value={filteredActive.length} />
+        <MetricCard title="Overdue" value={formatCurrency(filteredOverdueTotal)} danger={filteredOverdue.length > 0} subtitle={`${filteredOverdue.length} plan${filteredOverdue.length !== 1 ? 's' : ''}`} />
+        {failedInRange > 0 && <MetricCard title="Failed Payments" value={failedInRange} danger subtitle="Needs attention" />}
         <MetricCard title="Pipeline Value" value={formatCurrency(pipelineValue)} subtitle="Remaining to collect" />
-        <MetricCard
-          title="Confirmed This Month"
-          value={thisMonthReceipts.length}
-          subtitle={unmatchedReceipts.length > 0 ? `${unmatchedReceipts.length} unmatched` : 'All matched'}
-          warning={unmatchedReceipts.length > 0}
-          accent={unmatchedReceipts.length === 0}
-        />
+        <MetricCard title="Total Active Plans" value={activePlans.length} subtitle="Across all time" />
       </div>
 
       {/* Tab toggle */}
@@ -226,6 +338,7 @@ export default function PaymentPlans() {
             columns={columns}
             data={filteredPlans}
             defaultSort={{ column: 'next_due_date', ascending: true }}
+            onRowClick={(row) => handleEditPlan(row)}
           />
         </>
       )}
@@ -236,6 +349,93 @@ export default function PaymentPlans() {
           data={receipts || []}
           defaultSort={{ column: 'received_at', ascending: false }}
         />
+      )}
+      <SlideOver open={!!editingPlan} onClose={() => setEditingPlan(null)} title={editingPlan ? `Edit: ${editingPlan.client_name}` : ''}>
+        <form onSubmit={handleSavePlan} className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Deal Date</label>
+            <input type="date" value={planForm.deal_date || ''} onChange={(e) => setPlanForm({ ...planForm, deal_date: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            {!editingPlan?._linkedDealId && <p className="text-xs text-amber-400 mt-1">No linked deal found — date won't be saved to a deal</p>}
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Client Name</label>
+            <input name="client_name" value={planForm.client_name || ''} onChange={(e) => setPlanForm({ ...planForm, client_name: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Closer</label>
+            <select value={planForm.closer_id || ''} onChange={(e) => setPlanForm({ ...planForm, closer_id: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan">
+              {CLOSERS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Monthly (£)</label>
+              <input type="number" min="0" step="1" value={planForm.monthly_amount || ''} onChange={(e) => setPlanForm({ ...planForm, monthly_amount: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Months Left</label>
+              <input type="number" min="0" step="1" value={planForm.months_remaining || ''} onChange={(e) => setPlanForm({ ...planForm, months_remaining: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Total Deal Size (£)</label>
+              <input type="number" min="0" step="1" value={planForm.total_value || ''} onChange={(e) => setPlanForm({ ...planForm, total_value: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Total Collected (£)</label>
+              <input type="number" min="0" step="1" value={planForm.total_collected || ''} onChange={(e) => setPlanForm({ ...planForm, total_collected: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Next Due Date</label>
+            <input type="date" value={planForm.next_due_date || ''} onChange={(e) => setPlanForm({ ...planForm, next_due_date: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <select value={planForm.status || 'active'} onChange={(e) => setPlanForm({ ...planForm, status: e.target.value })} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan">
+              <option value="active">Active</option>
+              <option value="due_soon">Due Soon</option>
+              <option value="overdue">Overdue</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Notes</label>
+            <textarea value={planForm.notes || ''} onChange={(e) => setPlanForm({ ...planForm, notes: e.target.value })} rows={3} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan resize-none" />
+          </div>
+          <button type="submit" disabled={savingPlan} className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50">
+            {savingPlan ? 'Saving...' : 'Update Plan'}
+          </button>
+        </form>
+      </SlideOver>
+
+      {/* Payment date prompt */}
+      {paymentDatePrompt && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setPaymentDatePrompt(null)}>
+          <div className="bg-[#1a1d20] border border-gray-700 rounded-xl p-6 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold">Record Payment</h3>
+            <p className="text-xs text-gray-400">{paymentDatePrompt.client_name} — {formatCurrency(paymentDatePrompt.monthly_amount)}</p>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Payment Date</label>
+              <input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleMarkPaid(paymentDatePrompt, paymentDate)}
+                className="flex-1 bg-brand-cyan text-white py-2 rounded-lg text-sm font-medium hover:bg-brand-mid transition-colors"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => setPaymentDatePrompt(null)}
+                className="flex-1 bg-white/5 text-gray-400 py-2 rounded-lg text-sm font-medium hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

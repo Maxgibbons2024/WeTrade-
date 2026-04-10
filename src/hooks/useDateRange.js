@@ -26,11 +26,16 @@ function calcRange(preset) {
 
   switch (preset) {
     case 'this_week': {
-      return { start: getMonday(now), end: endOfDay };
+      const monday = getMonday(now);
+      const sunday = new Date(monday);
+      sunday.setDate(sunday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+      return { start: monday, end: sunday };
     }
     case 'this_month': {
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { start, end: endOfDay };
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      return { start, end: monthEnd };
     }
     case 'last_month': {
       const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);

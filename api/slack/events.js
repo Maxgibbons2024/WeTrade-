@@ -69,40 +69,49 @@ function isDealMessage(text) {
   // Reject percentage values (show rate lines)
   if (/\d+\.\d+%/.test(text)) return false;
 
-  // Must contain " - " delimiter (client name - details pattern)
-  if (!text.includes(' - ')) return false;
-
-  // The part before the first dash should look like a client name
-  const dashIndex = text.indexOf(' - ');
-  const beforeDash = text.substring(0, dashIndex).trim();
-  // Must start with a letter, be 2-50 chars, no emoji colons
-  if (!/^[A-Za-z]/.test(beforeDash) || beforeDash.length < 2 || beforeDash.length > 50) return false;
-  if (beforeDash.includes(':')) return false;
-
-  const afterDash = text.substring(dashIndex + 3);
-
   // POSITIVE SIGNALS — require at least 2
   let signals = 0;
-  if (/£\s*\d{1,6}(?:,\d{3})*(?:\.\d{2})?/.test(afterDash)) signals++;
-  if (/\d+(?:\.\d+)?\s*k\b/i.test(afterDash)) signals++;
-  if (/p\/m|per\s*month|\/mo|monthly/i.test(afterDash)) signals++;
-  if (/(?:down|upfront)\s*/i.test(afterDash)) signals++;
-  if (/\b(?:Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i.test(afterDash)) signals++;
-  if (/paid/i.test(afterDash) && /[£\d]/.test(afterDash)) signals++;
+  if (/£\s*\d{1,6}(?:,\d{3})*(?:\.\d{2})?/.test(text)) signals++;
+  if (/\d+(?:\.\d+)?\s*k\b/i.test(text)) signals++;
+  if (/p\/m|per\s*month|\/mo|monthly/i.test(text)) signals++;
+  if (/(?:down|upfront)\s*/i.test(text)) signals++;
+  if (/\b(?:Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i.test(text)) signals++;
+  if (/paid/i.test(text) && /[£\d]/.test(text)) signals++;
+  if (/onboarding/i.test(text)) signals++;
 
   return signals >= 2;
 }
 
 // ---- Deal message parsing ----
 function parseDeal(text) {
+  // Try "ClientName - details" format first
+  let clientName = '';
+  let details = text;
+
   const dashIndex = text.indexOf(' - ');
-  if (dashIndex < 0) return null;
-  const clientName = text.substring(0, dashIndex).trim();
-  const details = text.substring(dashIndex + 3);
+  if (dashIndex > 0 && dashIndex < 50) {
+    const beforeDash = text.substring(0, dashIndex).trim();
+    // Check it looks like a name (starts with letter, no colons)
+    if (/^[A-Za-z]/.test(beforeDash) && !beforeDash.includes(':') && beforeDash.length >= 2) {
+      clientName = beforeDash;
+      details = text.substring(dashIndex + 3);
+    }
+  }
+
+  // If no dash format, try to extract name from start of message
+  // Pattern: "FirstName LastName <deal details...>"
+  if (!clientName) {
+    const nameMatch = text.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?=.*(?:\d+k|\d+\s*(?:down|p\/m|per month)|£|kickstarter|mechanical|pro|elite))/i);
+    if (nameMatch) {
+      clientName = nameMatch[1].trim();
+      details = text.substring(clientName.length).trim();
+    }
+  }
+
   if (!clientName) return null;
 
   let frontEnd = 0;
-  const feK = details.match(/(\d+(?:\.\d+)?)\s*k\s*(?:down|upfront|paid)/i);
+  const feK = details.match(/(\d+(?:\.\d+)?)\s*k\s*(?:down|upfront|paid)?/i);
   const feN = details.match(/£?\s*(\d{1,6}(?:,\d{3})*)\s*(?:down|upfront|paid)/i);
   if (feK) frontEnd = parseFloat(feK[1]) * 1000;
   else if (feN) frontEnd = parseFloat(feN[1].replace(/,/g, ''));
@@ -111,6 +120,18 @@ function parseDeal(text) {
   const moMatch = details.match(/(\d+(?:\.\d+)?)\s*(?:p\/m|per\s*month|\/mo|monthly)/i);
   if (moMatch) monthlyAmount = parseFloat(moMatch[1]);
 
+  // Also check for "x6 500" or "500 x 12" pattern (installments)
+  if (monthlyAmount === 0) {
+    const installMatch = details.match(/x\s*(\d+)\s+(\d+)/i) || details.match(/(\d+)\s*x\s*(\d+)/i);
+    if (installMatch) {
+      const a = parseInt(installMatch[1]);
+      const b = parseInt(installMatch[2]);
+      // The smaller number is likely the count, larger is the amount
+      if (a <= 24 && b > a) monthlyAmount = b;
+      else if (b <= 24 && a > b) monthlyAmount = a;
+    }
+  }
+
   // Reject if no financial data extracted
   if (frontEnd === 0 && monthlyAmount === 0) return null;
 
@@ -118,11 +139,13 @@ function parseDeal(text) {
   const progMatch = details.match(/\b(Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i);
   if (progMatch) {
     const p = progMatch[1].toLowerCase();
-    if (p === 'kickstarter') programme = 'Kickstarter';
+    if (p === 'kickstarter' || p === 'kickstater') programme = 'Kickstarter';
     else if (p.includes('mechanical')) programme = 'Mechanical Mastery';
     else if (p === 'pro') programme = 'Pro';
     else if (p === 'elite') programme = 'Elite';
   }
+  // Also catch common typos
+  if (/kickstater/i.test(details)) programme = 'Kickstarter';
 
   let onboardingAssignedTo = null;
   const assignMatch = details.match(/@([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
@@ -130,7 +153,7 @@ function parseDeal(text) {
 
   let onboardingDate = null;
   const dateMatch = details.match(
-    /(\d{1,2}[:.]\d{2}\s*(?:am|pm)?)\s*(?:on\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*(\d{1,2})(?:st|nd|rd|th)?\s*(January|February|March|April|May|June|July|August|September|October|November|December)/i
+    /(\d{1,2}[:.]\d{2}\s*(?:am|pm)?)\s*(?:on\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)?\s*(\d{1,2})(?:st|nd|rd|th)?\s*(January|February|March|April|May|June|July|August|September|October|November|December)/i
   );
   if (dateMatch) {
     const parsed = new Date(`${dateMatch[2]} ${dateMatch[3]} ${new Date().getFullYear()} ${dateMatch[1]}`);
@@ -197,6 +220,43 @@ function parsePaymentNotification(text) {
     amount: parseFloat(match[2].replace(/,/g, '')),
     client_name: match[3].trim(),
   };
+}
+
+// ---- Session booking parsing (Calendly via Zapier) ----
+// Messages typically contain student name, date/time, and mentor name
+function parseSessionBooking(text) {
+  if (!text) return null;
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  let studentName = null;
+  let sessionDate = null;
+  let mentorName = null;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    // Look for name patterns
+    const nameMatch = line.match(/(?:name|student|client|invitee)[:\s]+(.+)/i);
+    if (nameMatch) studentName = nameMatch[1].trim();
+
+    // Look for date patterns
+    const dateMatch = line.match(/(?:date|time|scheduled|start)[:\s]+(.+)/i);
+    if (dateMatch) sessionDate = dateMatch[1].trim();
+
+    // Look for mentor/host patterns
+    const mentorMatch = line.match(/(?:mentor|host|with|assigned)[:\s]+(.+)/i);
+    if (mentorMatch) mentorName = mentorMatch[1].trim();
+  }
+
+  // If no structured fields found, try to extract name from first line
+  if (!studentName && lines.length > 0) {
+    const firstLine = lines[0];
+    // Skip if it looks like a bot header or URL
+    if (!/^http|^<|^new\s+event/i.test(firstLine)) {
+      studentName = firstLine.replace(/[:\-].*$/, '').trim();
+    }
+  }
+
+  if (!studentName) return null;
+  return { studentName, sessionDate, mentorName };
 }
 
 // ---- Main handler ----
@@ -359,6 +419,40 @@ export default async function handler(req, res) {
 
       await supabase.from('eod_calls').insert(rows);
       return res.status(200).json({ ok: true, type: 'eod' });
+    }
+
+    // --- Community channel (Calendly session bookings) ---
+    if (channel === process.env.SLACK_CHANNEL_COMMUNITY) {
+      const session = parseSessionBooking(text);
+      if (!session) {
+        return res.status(200).json({ ok: true, ignored: 'not a session booking' });
+      }
+
+      const supabase = getSupabase();
+
+      // Find student by name (case-insensitive partial match)
+      const { data: matches } = await supabase
+        .from('deals')
+        .select('id, client_name, session_count, last_session_date, mentor_name')
+        .ilike('client_name', `%${session.studentName}%`);
+
+      if (!matches || matches.length === 0) {
+        return res.status(200).json({ ok: true, ignored: `no student found: ${session.studentName}` });
+      }
+
+      const student = matches[0];
+      const today = new Date().toISOString().split('T')[0];
+      const updatePayload = {
+        session_count: (student.session_count || 0) + 1,
+        last_session_date: today,
+      };
+      // Update mentor if provided and not already set
+      if (session.mentorName && !student.mentor_name) {
+        updatePayload.mentor_name = session.mentorName;
+      }
+
+      await supabase.from('deals').update(updatePayload).eq('id', student.id);
+      return res.status(200).json({ ok: true, type: 'session_booking', student: student.client_name, sessions: updatePayload.session_count });
     }
 
     return res.status(200).json({ ok: true, ignored: 'no matching channel or filter' });

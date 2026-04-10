@@ -172,15 +172,18 @@ export default function Deals() {
     }
     setSubmitting(true);
     try {
-      await insertRow('deals', {
-        ...form,
-        front_end: Number(form.front_end),
-        monthly_amount: Number(form.monthly_amount) || 0,
-        onboarding_date: form.onboarding_date || null,
-        onboarding_assigned_to: form.onboarding_assigned_to || null,
-        call_booked_at: form.call_booked_at ? new Date(form.call_booked_at).toISOString() : null,
-        notes: form.notes || null,
-      });
+      const { total_paid, total_deal_size, created_at, ...dealFields } = form;
+      const payload = {
+        ...dealFields,
+        front_end: Number(dealFields.front_end),
+        monthly_amount: Number(dealFields.monthly_amount) || 0,
+        onboarding_date: dealFields.onboarding_date || null,
+        onboarding_assigned_to: dealFields.onboarding_assigned_to || null,
+        call_booked_at: dealFields.call_booked_at ? new Date(dealFields.call_booked_at).toISOString() : null,
+        notes: dealFields.notes || null,
+      };
+      if (created_at) payload.created_at = new Date(created_at).toISOString();
+      await insertRow('deals', payload);
       toast.success('Deal added successfully');
       setForm(EMPTY_FORM);
       setShowForm(false);
