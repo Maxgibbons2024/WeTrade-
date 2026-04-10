@@ -21,7 +21,18 @@ create table if not exists deals (
   notes text,
   status text not null default 'active' check (status in ('onboarding','active','follow_up','lost')),
   stripe_payment_id text,
-  call_booked_at timestamptz
+  call_booked_at timestamptz,
+  -- Community fields (managed by community manager)
+  mentor_name text,
+  session_count int not null default 0,
+  sessions_total int,  -- null = Pro Group (unlimited)
+  last_session_date date,
+  trustpilot_review boolean not null default false,
+  no_show_count int not null default 0,
+  prop_firm_name text,
+  prop_funded_amount numeric,
+  community_notes text,
+  email text
 );
 
 create table if not exists payment_plans (

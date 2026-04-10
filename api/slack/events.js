@@ -222,6 +222,43 @@ function parsePaymentNotification(text) {
   };
 }
 
+// ---- Session booking parsing (Calendly via Zapier) ----
+// Messages typically contain student name, date/time, and mentor name
+function parseSessionBooking(text) {
+  if (!text) return null;
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  let studentName = null;
+  let sessionDate = null;
+  let mentorName = null;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    // Look for name patterns
+    const nameMatch = line.match(/(?:name|student|client|invitee)[:\s]+(.+)/i);
+    if (nameMatch) studentName = nameMatch[1].trim();
+
+    // Look for date patterns
+    const dateMatch = line.match(/(?:date|time|scheduled|start)[:\s]+(.+)/i);
+    if (dateMatch) sessionDate = dateMatch[1].trim();
+
+    // Look for mentor/host patterns
+    const mentorMatch = line.match(/(?:mentor|host|with|assigned)[:\s]+(.+)/i);
+    if (mentorMatch) mentorName = mentorMatch[1].trim();
+  }
+
+  // If no structured fields found, try to extract name from first line
+  if (!studentName && lines.length > 0) {
+    const firstLine = lines[0];
+    // Skip if it looks like a bot header or URL
+    if (!/^http|^<|^new\s+event/i.test(firstLine)) {
+      studentName = firstLine.replace(/[:\-].*$/, '').trim();
+    }
+  }
+
+  if (!studentName) return null;
+  return { studentName, sessionDate, mentorName };
+}
+
 // ---- Main handler ----
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -382,6 +419,40 @@ export default async function handler(req, res) {
 
       await supabase.from('eod_calls').insert(rows);
       return res.status(200).json({ ok: true, type: 'eod' });
+    }
+
+    // --- Community channel (Calendly session bookings) ---
+    if (channel === process.env.SLACK_CHANNEL_COMMUNITY) {
+      const session = parseSessionBooking(text);
+      if (!session) {
+        return res.status(200).json({ ok: true, ignored: 'not a session booking' });
+      }
+
+      const supabase = getSupabase();
+
+      // Find student by name (case-insensitive partial match)
+      const { data: matches } = await supabase
+        .from('deals')
+        .select('id, client_name, session_count, last_session_date, mentor_name')
+        .ilike('client_name', `%${session.studentName}%`);
+
+      if (!matches || matches.length === 0) {
+        return res.status(200).json({ ok: true, ignored: `no student found: ${session.studentName}` });
+      }
+
+      const student = matches[0];
+      const today = new Date().toISOString().split('T')[0];
+      const updatePayload = {
+        session_count: (student.session_count || 0) + 1,
+        last_session_date: today,
+      };
+      // Update mentor if provided and not already set
+      if (session.mentorName && !student.mentor_name) {
+        updatePayload.mentor_name = session.mentorName;
+      }
+
+      await supabase.from('deals').update(updatePayload).eq('id', student.id);
+      return res.status(200).json({ ok: true, type: 'session_booking', student: student.client_name, sessions: updatePayload.session_count });
     }
 
     return res.status(200).json({ ok: true, ignored: 'no matching channel or filter' });

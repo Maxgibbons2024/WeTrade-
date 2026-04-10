@@ -6,12 +6,14 @@ import Closers from './pages/Closers';
 import Deals from './pages/Deals';
 import PaymentPlans from './pages/PaymentPlans';
 import Fathom from './pages/Fathom';
+import Community from './pages/Community';
 import ManualEntry from './pages/ManualEntry';
 
 const PAGES = {
   overview: Overview,
   closers: Closers,
   deals: Deals,
+  community: Community,
   payments: PaymentPlans,
   fathom: Fathom,
   entry: ManualEntry,

@@ -15,6 +15,17 @@ export const PAYMENT_METHODS = ['stripe', 'paypal', 'bank_transfer', 'mamo'];
 
 export const SOURCES = ['slack', 'stripe', 'manual'];
 
+export const MENTORS = [
+  { id: 'henry', name: 'Henry Steeds', initials: 'HS', color: '#27CCE7' },
+  { id: 'geo', name: 'Geo Cook', initials: 'GC', color: '#10B981' },
+  { id: 'sam', name: 'Sam Ducker', initials: 'SD', color: '#F59E0B' },
+];
+
+export const PACKAGES = [
+  { id: '10_sessions', label: '10 Sessions', sessionsTotal: 10 },
+  { id: 'pro_group', label: 'Pro Group', sessionsTotal: null },
+];
+
 export const OUTCOME_COLOURS = {
   closed: '#10B981',
   no_show: '#EF4444',
@@ -48,6 +59,10 @@ export function formatDate(dateStr) {
 
 export function getCloser(id) {
   return CLOSERS.find((c) => c.id === id) || { id, name: id, initials: '??', color: '#6B7280' };
+}
+
+export function getMentor(id) {
+  return MENTORS.find((m) => m.id === id) || { id, name: id, initials: '??', color: '#6B7280' };
 }
 
 export function getMonthStart() {
