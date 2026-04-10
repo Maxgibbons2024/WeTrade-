@@ -30,6 +30,8 @@ export default function Community() {
   const [editingStudent, setEditingStudent] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [filterMentor, setFilterMentor] = useState('all');
+  const [filterPackage, setFilterPackage] = useState('all');
 
   const { data: allDeals, loading, error, refetch } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -39,11 +41,20 @@ export default function Community() {
   useRealtime('deals', handleRealtime);
 
   // Filter to community students: those with any community field populated
-  const students = useMemo(() =>
+  const allStudents = useMemo(() =>
     (allDeals || []).filter((d) =>
       d.mentor_name || d.session_count > 0 || d.trustpilot_review ||
       d.prop_firm_name || d.community_notes || d.email
     ), [allDeals]);
+
+  // Apply mentor and package filters
+  const students = useMemo(() =>
+    allStudents.filter((s) => {
+      if (filterMentor !== 'all' && s.mentor_name !== filterMentor) return false;
+      if (filterPackage === '10_sessions' && s.sessions_total !== 10) return false;
+      if (filterPackage === 'pro_group' && s.sessions_total !== null) return false;
+      return true;
+    }), [allStudents, filterMentor, filterPackage]);
 
   // ---- Metrics ----
   const totalStudents = students.length;
@@ -243,6 +254,36 @@ export default function Community() {
         >
           + Add Student
         </button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={filterMentor}
+          onChange={(e) => setFilterMentor(e.target.value)}
+          className="bg-[#1a1d20] border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+        >
+          <option value="all">All Mentors</option>
+          {MENTORS.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+        </select>
+        <select
+          value={filterPackage}
+          onChange={(e) => setFilterPackage(e.target.value)}
+          className="bg-[#1a1d20] border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+        >
+          <option value="all">All Packages</option>
+          <option value="10_sessions">10 Sessions</option>
+          <option value="pro_group">Pro Group</option>
+        </select>
+        {(filterMentor !== 'all' || filterPackage !== 'all') && (
+          <button
+            onClick={() => { setFilterMentor('all'); setFilterPackage('all'); }}
+            className="text-xs text-gray-500 hover:text-white transition-colors"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="text-xs text-gray-500 ml-auto">{students.length} student{students.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Metric cards */}
