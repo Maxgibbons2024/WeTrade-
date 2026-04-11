@@ -14,7 +14,7 @@ import CloserAvatar from '../components/CloserAvatar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange, calcDelta, CLOSERS } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, isCommunityOnly, calcDelta, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 import useSheetStats from '../hooks/useSheetStats';
 
@@ -45,7 +45,8 @@ export default function Overview() {
   const error = dealsError || plansError;
 
   // Filtered metrics
-  const rangeDeals = useMemo(() => deals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end)), [deals, dateRange]);
+  const salesDeals = useMemo(() => deals.filter((d) => !isCommunityOnly(d)), [deals]);
+  const rangeDeals = useMemo(() => salesDeals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end)), [salesDeals, dateRange]);
   const frontEndCollected = useMemo(() => rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [rangeDeals]);
 
   // Cash collected = front end from deals + successful payment receipts in range
@@ -71,7 +72,7 @@ export default function Overview() {
   }, [sheetData]);
 
   // Compare metrics
-  const compareDeals = useMemo(() => compareRange ? deals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [deals, compareRange]);
+  const compareDeals = useMemo(() => compareRange ? salesDeals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [salesDeals, compareRange]);
   const compareCollected = compareDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
 
   // Overdue payments (always current, not filtered by date)
@@ -143,7 +144,7 @@ export default function Overview() {
     }
 
     const collected = weeks.map((w) =>
-      deals
+      salesDeals
         .filter((d) => {
           const dt = new Date(d.created_at);
           return dt >= w.start && dt < w.end;
@@ -181,7 +182,7 @@ export default function Overview() {
         },
       ],
     };
-  }, [deals, paymentPlans]);
+  }, [salesDeals, paymentPlans]);
 
   const chartOptions = {
     responsive: true,
@@ -210,7 +211,7 @@ export default function Overview() {
   };
 
   // Recent deals (last 10)
-  const recentDeals = useMemo(() => deals.slice(0, 10), [deals]);
+  const recentDeals = useMemo(() => salesDeals.slice(0, 10), [salesDeals]);
 
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error} />;

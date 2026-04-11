@@ -98,6 +98,10 @@ export function formatDuration(startDate, endDate) {
   return `${months} months`;
 }
 
+export function isCommunityOnly(deal) {
+  return !!deal.mentor_name && Number(deal.front_end || 0) === 0 && Number(deal.monthly_amount || 0) === 0;
+}
+
 export function calcDelta(current, previous) {
   if (!previous || previous === 0) return null;
   const pct = Math.round(((current - previous) / previous) * 100);

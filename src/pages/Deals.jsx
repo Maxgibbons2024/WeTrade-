@@ -13,6 +13,7 @@ import {
   formatDate,
   formatDuration,
   isInDateRange,
+  isCommunityOnly,
   CLOSERS,
   PROGRAMMES,
   DEAL_STATUSES,
@@ -60,6 +61,7 @@ export default function Deals() {
   // Apply filters — show deals created in range OR with payment activity in range
   const filtered = useMemo(() => {
     return deals.filter((d) => {
+      if (isCommunityOnly(d)) return false;
       if (filterCloser !== 'all' && d.closer_id !== filterCloser) return false;
       if (filterStatus !== 'all' && d.status !== filterStatus) return false;
       const inDateRange = isInDateRange(d.created_at, dateRange.start, dateRange.end);

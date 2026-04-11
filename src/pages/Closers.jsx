@@ -15,7 +15,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery } from '../hooks/useSupabase';
-import { CLOSERS, formatCurrency, isInDateRange } from '../lib/constants';
+import { CLOSERS, formatCurrency, isInDateRange, isCommunityOnly } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 import useSheetStats from '../hooks/useSheetStats';
 
@@ -43,7 +43,7 @@ export default function Closers() {
 
   const closerStats = useMemo(() => {
     return CLOSERS.map((closer) => {
-      const closerDeals = deals.filter((d) => d.closer_id === closer.id);
+      const closerDeals = deals.filter((d) => d.closer_id === closer.id && !isCommunityOnly(d));
       const rangeDeals = closerDeals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end));
       const rangeEod = eodCalls.filter((c) => c.closer_id === closer.id && isInDateRange(c.report_date, dateRange.start, dateRange.end));
       const closerPlans = paymentPlans.filter((p) => p.closer_id === closer.id);
