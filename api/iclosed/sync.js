@@ -180,6 +180,90 @@ export default async function handler(req, res) {
     });
   }
 
+  // Closer drill-down: list every call for one closer in a date range,
+  // so we can sanity-check dashboard totals against iClosed.
+  // Hit /api/iclosed/sync?key=...&debug=closer&closer=dave&since=2026-04-01&until=2026-04-30
+  if (req.query?.debug === 'closer') {
+    const supabase = getSupabaseAdmin();
+    const closer = req.query.closer || 'dave';
+    const since = req.query.since || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const until = req.query.until || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+    const { data, error } = await supabase
+      .from('iclosed_calls')
+      .select('id, contact_name, contact_email, scheduled_at, status, outcome, closer_id, closer_iclosed_id, raw')
+      .eq('closer_id', closer)
+      .gte('scheduled_at', since)
+      .lte('scheduled_at', until)
+      .order('scheduled_at', { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+
+    const byStatus = {};
+    const callIds = new Set();
+    const duplicateCallIds = [];
+    const contactEmails = new Map();
+    const rescheduled = [];
+
+    const calls = (data || []).map((row) => {
+      byStatus[row.status] = (byStatus[row.status] || 0) + 1;
+      // Check for reschedule flags in raw
+      const rescheduleReason = row.raw?.rescheduleReason;
+      const rescheduledBy = row.raw?.rescheduledBy;
+      if (rescheduleReason || rescheduledBy) {
+        rescheduled.push({ id: row.id, rescheduleReason, rescheduledBy });
+      }
+      // Check for duplicate iClosed callId vs id
+      const rawCallId = row.raw?.callId;
+      if (rawCallId != null && String(rawCallId) !== row.id) {
+        duplicateCallIds.push({ rowId: row.id, rawCallId: String(rawCallId) });
+      }
+      if (callIds.has(row.id)) duplicateCallIds.push({ rowId: row.id, note: 'duplicate row id' });
+      callIds.add(row.id);
+      // Track contacts to spot same person showing up multiple times
+      const key = (row.contact_email || row.contact_name || '').toLowerCase();
+      if (key) {
+        const list = contactEmails.get(key) || [];
+        list.push({ id: row.id, scheduled_at: row.scheduled_at, status: row.status });
+        contactEmails.set(key, list);
+      }
+      return {
+        id: row.id,
+        scheduled_at: row.scheduled_at,
+        status: row.status,
+        outcome: row.outcome,
+        contact_name: row.contact_name,
+        contact_email: row.contact_email,
+        cancelledBy: row.raw?.cancelledBy || null,
+        cancelReason: row.raw?.cancelReason || null,
+        rescheduleReason: row.raw?.rescheduleReason || null,
+        rescheduledBy: row.raw?.rescheduledBy || null,
+        rawCallId: row.raw?.callId != null ? String(row.raw.callId) : null,
+      };
+    });
+
+    // Contacts appearing more than once — potential reschedule duplicates
+    const repeatedContacts = [];
+    for (const [key, list] of contactEmails.entries()) {
+      if (list.length > 1) repeatedContacts.push({ contact: key, calls: list });
+    }
+
+    return res.status(200).json({
+      closer,
+      since,
+      until,
+      totalRows: calls.length,
+      byStatus,
+      nonCancelled: calls.filter((c) => c.status !== 'CANCELLED').length,
+      rescheduledCount: rescheduled.length,
+      duplicateCallIdCount: duplicateCallIds.length,
+      repeatedContactCount: repeatedContacts.length,
+      rescheduled,
+      duplicateCallIds,
+      repeatedContacts,
+      calls,
+    });
+  }
+
   const supabase = getSupabaseAdmin();
   const t0 = Date.now();
   const timings = {};
