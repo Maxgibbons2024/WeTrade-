@@ -1,8 +1,65 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
-import { iclosedListAll, normaliseCall } from '../_lib/iclosed.js';
+import { iclosedListAll, normaliseCall, pick } from '../_lib/iclosed.js';
 
 // Closes that count toward setter attribution
 const CLOSED_DEAL_STATUSES = ['active', 'onboarding'];
+
+// Auto-bootstrap: how far back to backfill the very first time the table is empty
+const BOOTSTRAP_SINCE = '2025-01-01';
+
+// Maps iClosed display names → our internal closer/setter ids.
+// Used for auto-seeding the iclosed_users table on first run.
+const NAME_TO_INTERNAL = [
+  { match: /lloyd/i,             internal_id: 'lloyd', role: 'closer' },
+  { match: /dave|david/i,        internal_id: 'dave',  role: 'closer' },
+  { match: /zak|zach/i,          internal_id: 'zak',   role: 'closer' },
+  { match: /joe|joseph/i,        internal_id: 'joe',   role: 'closer' },
+  { match: /shea/i,              internal_id: 'shea',  role: 'closer' },
+  { match: /chris|christopher/i, internal_id: 'chris', role: 'closer' },
+  { match: /kai/i,               internal_id: 'kai',   role: 'setter' },
+];
+
+function resolveInternal(displayName) {
+  if (!displayName) return null;
+  for (const rule of NAME_TO_INTERNAL) {
+    if (rule.match.test(displayName)) return rule;
+  }
+  return null;
+}
+
+// Auto-seed iclosed_users by calling iClosed's user list and matching names.
+// Runs on first sync (when the mapping table is empty) so no manual setup is needed.
+async function seedUsersIfEmpty(supabase) {
+  const { data: existing, error } = await supabase.from('iclosed_users').select('iclosed_user_id').limit(1);
+  if (error) throw error;
+  if (existing && existing.length > 0) return { seeded: 0, alreadyPresent: true };
+
+  console.log('[iclosed/sync] iclosed_users empty — auto-seeding from /v1/users');
+  const users = await iclosedListAll('/v1/users', { pageSize: 100, maxPages: 5 });
+  const rows = [];
+  for (const u of users) {
+    const id = pick(u, 'id', 'userId');
+    const name =
+      pick(u, 'fullName', 'name', 'displayName') ||
+      [pick(u, 'firstName'), pick(u, 'lastName')].filter(Boolean).join(' ');
+    const rule = resolveInternal(name);
+    if (!id || !rule) continue;
+    rows.push({
+      iclosed_user_id: String(id),
+      internal_id: rule.internal_id,
+      role: rule.role,
+      display_name: name,
+      active: true,
+    });
+  }
+  if (rows.length) {
+    const { error: upErr } = await supabase
+      .from('iclosed_users')
+      .upsert(rows, { onConflict: 'iclosed_user_id' });
+    if (upErr) throw upErr;
+  }
+  return { seeded: rows.length, alreadyPresent: false };
+}
 
 export default async function handler(req, res) {
   // Auth: cron secret OR allow direct call when CRON_SECRET unset (dev)
@@ -15,14 +72,28 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Missing ICLOSED_API_KEY environment variable' });
   }
 
-  // Date window — default last 7 days, override via ?since=YYYY-MM-DD
-  const since = req.query?.since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-  const until = req.query?.until || new Date().toISOString().split('T')[0];
-
   const supabase = getSupabaseAdmin();
 
   try {
-    // Load user mapping once
+    // 1. Auto-seed iclosed_users on first run
+    const seedResult = await seedUsersIfEmpty(supabase);
+
+    // 2. Decide date window: explicit query > auto-backfill (if calls table empty) > last 7 days
+    let since = req.query?.since;
+    const until = req.query?.until || new Date().toISOString().split('T')[0];
+    if (!since) {
+      const { count } = await supabase
+        .from('iclosed_calls')
+        .select('id', { count: 'exact', head: true });
+      if (!count || count === 0) {
+        console.log('[iclosed/sync] iclosed_calls empty — auto-backfilling from', BOOTSTRAP_SINCE);
+        since = BOOTSTRAP_SINCE;
+      } else {
+        since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      }
+    }
+
+    // Load user mapping
     const { data: users, error: usersErr } = await supabase.from('iclosed_users').select('*');
     if (usersErr) throw usersErr;
     const userMap = new Map((users || []).map((u) => [String(u.iclosed_user_id), u]));
@@ -106,6 +177,7 @@ export default async function handler(req, res) {
       until,
       processed,
       matched,
+      seeded: seedResult.seeded,
       errors: errors.length ? errors : undefined,
     });
   } catch (err) {
