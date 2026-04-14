@@ -120,6 +120,66 @@ export default async function handler(req, res) {
     return res.status(200).json(out);
   }
 
+  // Shape probe: inspects already-synced iclosed_calls.raw so we can see the
+  // real task/outcome fields iClosed writes and tune normaliseCall.
+  // Hit /api/iclosed/sync?key=...&debug=shapes
+  if (req.query?.debug === 'shapes') {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from('iclosed_calls')
+      .select('id, status, outcome, raw')
+      .order('scheduled_at', { ascending: false })
+      .limit(300);
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Current status distribution
+    const statusCounts = {};
+    const taskKeyCounts = {};
+    const taskCompletedCounts = {};
+    const taskOutcomeCounts = {};
+    const topLevelKeySet = new Set();
+    const samplesByStatus = {};
+
+    for (const row of data || []) {
+      statusCounts[row.status] = (statusCounts[row.status] || 0) + 1;
+      if (row.raw && typeof row.raw === 'object') {
+        for (const k of Object.keys(row.raw)) topLevelKeySet.add(k);
+      }
+      const tasks = Array.isArray(row.raw?.task) ? row.raw.task : [];
+      for (const t of tasks) {
+        if (t && typeof t === 'object') {
+          for (const k of Object.keys(t)) taskKeyCounts[k] = (taskKeyCounts[k] || 0) + 1;
+          const c = String(t.completed);
+          taskCompletedCounts[c] = (taskCompletedCounts[c] || 0) + 1;
+          const o = t.outcome == null ? '<null>' : String(t.outcome);
+          taskOutcomeCounts[o] = (taskOutcomeCounts[o] || 0) + 1;
+        }
+      }
+      if (!samplesByStatus[row.status] && row.raw) {
+        samplesByStatus[row.status] = {
+          id: row.id,
+          status: row.status,
+          outcome: row.outcome,
+          rawTask: row.raw.task,
+          rawCancelReason: row.raw.cancelReason,
+          rawCancelledBy: row.raw.cancelledBy,
+          dateTimeUTC: row.raw.dateTimeUTC,
+          topLevelKeys: Object.keys(row.raw).sort(),
+        };
+      }
+    }
+
+    return res.status(200).json({
+      sampled: data?.length || 0,
+      statusCounts,
+      topLevelKeys: Array.from(topLevelKeySet).sort(),
+      taskKeyCounts,
+      taskCompletedCounts,
+      taskOutcomeCounts,
+      samplesByStatus,
+    });
+  }
+
   const supabase = getSupabaseAdmin();
 
   try {
