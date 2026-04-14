@@ -151,8 +151,12 @@ export function pick(obj, ...keys) {
   return undefined;
 }
 
-// Closed-deal outcomes (case-insensitive match)
-const CLOSE_OUTCOME_RE = /close|won|sale|paid/i;
+// iClosed task.outcome values we've seen in the wild:
+//   WON       — deal closed
+//   NO_SALE   — call happened, did not close (includes noSaleReason ADMIN_CANCELLED
+//               for cancellations, but cancelledBy catches those earlier)
+//   null      — task not yet completed (upcoming or no-show)
+const CLOSED_OUTCOMES = new Set(['WON']);
 
 /**
  * Normalise an iClosed event call into our `iclosed_calls` row shape.
@@ -193,14 +197,12 @@ export function normaliseCall(call) {
   if (call.cancelReason || call.cancelledBy) {
     status = 'CANCELLED';
   } else if (task && task.completed) {
-    if (task.outcome && CLOSE_OUTCOME_RE.test(task.outcome)) {
-      status = 'CLOSED';
-    } else {
-      status = 'SHOWED';
-    }
+    // The closer marked the call complete. WON = closed, everything else
+    // (NO_SALE, null, etc.) means the call happened but didn't convert.
+    status = CLOSED_OUTCOMES.has(task.outcome) ? 'CLOSED' : 'SHOWED';
   } else if (isPast) {
-    // Past scheduled time but task not marked completed → treat as no-show
-    status = task && task.outcome === 'NO_SHOW' ? 'NO_SHOW' : 'NO_SHOW';
+    // Past scheduled time with no completed task → no-show.
+    status = 'NO_SHOW';
   }
 
   return {
