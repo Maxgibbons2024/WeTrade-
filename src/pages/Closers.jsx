@@ -367,9 +367,9 @@ export default function Closers() {
                     )}
                   </div>
 
-                  {/* Daily Call Activity (iClosed) */}
+                  {/* Daily Call Activity (iClosed) — scoped to selected date range */}
                   {(iclosedDaily?.[stat.id]?.length || 0) > 0 && (() => {
-                    const series = iclosedDaily[stat.id].slice(-7);
+                    const series = iclosedDaily[stat.id];
                     const totals = series.reduce(
                       (acc, d) => {
                         acc.scheduled += d.scheduled;
@@ -388,7 +388,9 @@ export default function Closers() {
                     ];
                     return (
                       <div>
-                        <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity (last 7 days)</h4>
+                        <h4 className="text-xs text-gray-500 font-medium mb-2">
+                          Daily Call Activity ({series.length} {series.length === 1 ? 'day' : 'days'})
+                        </h4>
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
