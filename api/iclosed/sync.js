@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
-import { iclosedListAll, normaliseCall, pick } from '../_lib/iclosed.js';
+import { iclosedListAll, iclosedFetch, normaliseCall, pick } from '../_lib/iclosed.js';
 
 // Closes that count toward setter attribution
 const CLOSED_DEAL_STATUSES = ['active', 'onboarding'];
@@ -75,6 +75,49 @@ export default async function handler(req, res) {
   }
   if (!process.env.ICLOSED_API_KEY) {
     return res.status(500).json({ error: 'Missing ICLOSED_API_KEY environment variable' });
+  }
+
+  // Debug mode: dumps raw iClosed responses so we can see actual endpoint shape.
+  // Hit /api/iclosed/sync?key=...&debug=1
+  if (req.query?.debug === '1') {
+    const out = {};
+    try {
+      const users = await iclosedFetch('/v1/users?limit=5');
+      out.users = {
+        ok: true,
+        isArray: Array.isArray(users),
+        topLevelKeys: !Array.isArray(users) && users ? Object.keys(users) : null,
+        count: Array.isArray(users) ? users.length : (users?.data?.length || users?.items?.length || null),
+        sample: users,
+      };
+    } catch (e) { out.users = { ok: false, error: e.message }; }
+
+    const since = req.query.since || '2025-01-01';
+    const until = req.query.until || new Date().toISOString().split('T')[0];
+    const pathsToTry = [
+      `/v1/eventCalls?from=${since}T00:00:00Z&to=${until}T23:59:59Z&limit=5`,
+      `/v1/eventCalls?limit=5`,
+      `/v1/calls?limit=5`,
+      `/v1/bookings?limit=5`,
+      `/v1/events?limit=5`,
+    ];
+    out.eventCallsAttempts = [];
+    for (const p of pathsToTry) {
+      try {
+        const r = await iclosedFetch(p);
+        out.eventCallsAttempts.push({
+          path: p,
+          ok: true,
+          isArray: Array.isArray(r),
+          topLevelKeys: !Array.isArray(r) && r ? Object.keys(r) : null,
+          count: Array.isArray(r) ? r.length : (r?.data?.length || r?.items?.length || r?.eventCalls?.length || null),
+          sample: r,
+        });
+      } catch (e) {
+        out.eventCallsAttempts.push({ path: p, ok: false, error: e.message });
+      }
+    }
+    return res.status(200).json(out);
   }
 
   const supabase = getSupabaseAdmin();
