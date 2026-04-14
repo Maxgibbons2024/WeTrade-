@@ -180,7 +180,100 @@ export default async function handler(req, res) {
     });
   }
 
-  // Closer drill-down: list every call for one closer in a date range,
+  // Single-row re-derive probe: reads one row from iclosed_calls.raw, runs
+  // it through the CURRENT normaliseCall, and writes the fresh status back.
+  // Returns before/after so we can see if the upsert actually mutates the
+  // column. Hit /api/iclosed/sync?key=...&debug=rederive&id=1743263
+  if (req.query?.debug === 'rederive') {
+    const supabase = getSupabaseAdmin();
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: 'Missing id query param' });
+
+    const { data: before, error: beforeErr } = await supabase
+      .from('iclosed_calls')
+      .select('id, status, outcome, raw, synced_at')
+      .eq('id', id)
+      .single();
+    if (beforeErr) return res.status(500).json({ error: beforeErr.message });
+
+    const fresh = normaliseCall(before.raw);
+
+    const { error: upErr } = await supabase
+      .from('iclosed_calls')
+      .update({
+        status: fresh.status,
+        outcome: fresh.outcome,
+        synced_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+
+    const { data: after } = await supabase
+      .from('iclosed_calls')
+      .select('id, status, outcome, synced_at')
+      .eq('id', id)
+      .single();
+
+    return res.status(200).json({
+      id,
+      before: { status: before.status, outcome: before.outcome, synced_at: before.synced_at },
+      freshNormalised: { status: fresh.status, outcome: fresh.outcome },
+      updateError: upErr?.message || null,
+      after,
+      raw_task: before.raw?.task,
+      raw_cancelledBy: before.raw?.cancelledBy,
+      raw_cancelReason: before.raw?.cancelReason,
+    });
+  }
+
+  // Bulk re-derive: walks every row in iclosed_calls, re-runs normaliseCall
+  // against raw, and writes back any row whose status/outcome changed.
+  // Skips the iClosed API entirely — fast fix for rows stuck with old
+  // statuses from the initial buggy sync.
+  // Hit /api/iclosed/sync?key=...&debug=rederiveAll
+  if (req.query?.debug === 'rederiveAll') {
+    const supabase = getSupabaseAdmin();
+    let updated = 0;
+    let scanned = 0;
+    let errors = 0;
+    const pageSize = 1000;
+    let offset = 0;
+
+    for (;;) {
+      const { data, error } = await supabase
+        .from('iclosed_calls')
+        .select('id, status, outcome, raw')
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) return res.status(500).json({ error: error.message, scanned, updated });
+      if (!data || data.length === 0) break;
+
+      const toUpdate = [];
+      for (const row of data) {
+        scanned += 1;
+        if (!row.raw) continue;
+        const fresh = normaliseCall(row.raw);
+        if (fresh.status !== row.status || fresh.outcome !== row.outcome) {
+          toUpdate.push({ id: row.id, status: fresh.status, outcome: fresh.outcome });
+        }
+      }
+
+      // Batch updates — one UPDATE per changed row. Slower than upsert but
+      // keeps it simple and touches only the two columns.
+      for (const u of toUpdate) {
+        const { error: upErr } = await supabase
+          .from('iclosed_calls')
+          .update({ status: u.status, outcome: u.outcome })
+          .eq('id', u.id);
+        if (upErr) errors += 1;
+        else updated += 1;
+      }
+
+      if (data.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return res.status(200).json({ ok: true, scanned, updated, errors });
+  }
   // so we can sanity-check dashboard totals against iClosed.
   // Hit /api/iclosed/sync?key=...&debug=closer&closer=dave&since=2026-04-01&until=2026-04-30
   if (req.query?.debug === 'closer') {
