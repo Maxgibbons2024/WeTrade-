@@ -62,10 +62,15 @@ async function seedUsersIfEmpty(supabase) {
 }
 
 export default async function handler(req, res) {
-  // Auth: cron secret OR allow direct call when CRON_SECRET unset (dev)
+  // Auth: accept either a Bearer cron secret header (Vercel cron) or a ?key= query param
+  // (so you can trigger a manual sync from a browser bookmark). When CRON_SECRET is unset
+  // the endpoint is open for local dev.
   const authHeader = req.headers.authorization;
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  const queryKey = req.query?.key;
+  const headerOk = !cronSecret || authHeader === `Bearer ${cronSecret}`;
+  const queryOk = !cronSecret || queryKey === cronSecret;
+  if (!headerOk && !queryOk) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!process.env.ICLOSED_API_KEY) {
