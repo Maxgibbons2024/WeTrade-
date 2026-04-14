@@ -172,7 +172,6 @@ export default async function handler(req, res) {
       }
     }
 
-    let matched = 0;
     const rows = rawCalls.map((rawCall) => {
       const norm = normaliseCall(rawCall);
 
@@ -195,7 +194,6 @@ export default async function handler(req, res) {
           if (diffDays <= 14) { dealMatch = c; break; }
         }
       }
-      if (dealMatch) matched += 1;
 
       return {
         ...norm,
@@ -216,6 +214,7 @@ export default async function handler(req, res) {
       if (r.id) byId.set(r.id, r);
     }
     const dedupedRows = Array.from(byId.values());
+    const matched = dedupedRows.filter((r) => r.deal_id).length;
 
     // Upsert in batches of 500 to stay within Supabase row limits
     let processed = 0;

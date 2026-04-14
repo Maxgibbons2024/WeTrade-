@@ -90,22 +90,40 @@ function extractItems(json) {
 }
 
 /**
- * Page through a list endpoint via offset-based pagination until exhausted.
+ * Page through a list endpoint until exhausted.
+ *
+ * iClosed ignores `offset` on /v1/eventCalls (verified empirically — it returns
+ * the same first page over and over), so we use `page=N` (1-indexed) instead.
+ * We also short-circuit if a page adds zero new ids, which protects against
+ * any pagination param being silently ignored in future.
  */
-export async function iclosedListAll(path, { pageSize = 100, maxPages = 100 } = {}) {
+export async function iclosedListAll(path, { pageSize = 100, maxPages = 200 } = {}) {
+  const seen = new Set();
   const all = [];
   const sep = path.includes('?') ? '&' : '?';
 
-  for (let page = 0; page < maxPages; page++) {
-    const offset = page * pageSize;
-    const url = `${path}${sep}limit=${pageSize}&offset=${offset}`;
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `${path}${sep}limit=${pageSize}&page=${page}`;
     const json = await iclosedFetch(url);
     const items = extractItems(json);
 
     if (!items.length) break;
-    all.push(...items);
 
-    // Last page — items returned fewer than pageSize
+    // Count how many of this page's items we haven't already seen.
+    let added = 0;
+    for (const item of items) {
+      const id = item?.id ?? item?.callId ?? item?.userId;
+      const key = id != null ? String(id) : JSON.stringify(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(item);
+      added += 1;
+    }
+
+    // Pagination param is being ignored — bail rather than spin forever.
+    if (added === 0) break;
+
+    // Last page — fewer results than the page size.
     if (items.length < pageSize) break;
   }
 
