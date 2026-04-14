@@ -9,7 +9,7 @@
     },
     {
       "path": "/api/iclosed/sync",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }
