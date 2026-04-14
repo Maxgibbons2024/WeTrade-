@@ -3,7 +3,9 @@ import { Toaster } from 'react-hot-toast';
 import Sidebar from './components/Sidebar';
 import Overview from './pages/Overview';
 import Closers from './pages/Closers';
+import Setters from './pages/Setters';
 import Deals from './pages/Deals';
+import Sources from './pages/Sources';
 import PaymentPlans from './pages/PaymentPlans';
 import Fathom from './pages/Fathom';
 import Community from './pages/Community';
@@ -12,7 +14,9 @@ import ManualEntry from './pages/ManualEntry';
 const PAGES = {
   overview: Overview,
   closers: Closers,
+  setters: Setters,
   deals: Deals,
+  sources: Sources,
   community: Community,
   payments: PaymentPlans,
   fathom: Fathom,

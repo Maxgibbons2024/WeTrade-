@@ -16,17 +16,14 @@ import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime } from '../hooks/useSupabase';
 import { formatCurrency, formatDate, isInDateRange, isCommunityOnly, calcDelta, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
-import useSheetStats from '../hooks/useSheetStats';
+import useIclosedStats from '../hooks/useIclosedStats';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function Overview() {
   const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'];
-  const sheetMonth = dateRange.start ? monthNames[dateRange.start.getMonth()] : monthNames[new Date().getMonth()];
-  const { data: sheetData } = useSheetStats(sheetMonth);
+  const { byCloser: iclosedByCloser } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -54,22 +51,20 @@ export default function Overview() {
   const ppCollected = useMemo(() => rangeReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0), [rangeReceipts]);
   const totalCashCollected = frontEndCollected + ppCollected;
 
-  // Google Sheets call stats (aggregated across all closers)
+  // iClosed call stats (aggregated across all closers in the date range)
   const callStats = useMemo(() => {
-    if (!sheetData) return { scheduled: 0, live: 0, showRate: 0 };
     let scheduled = 0;
     let live = 0;
-    for (const closerId of ['lloyd', 'dave', 'zak']) {
-      const closer = sheetData[closerId];
-      if (!closer || closer.error) continue;
-      const sched = closer.metrics['SCHEDULED Consults'];
-      const liveM = closer.metrics['LIVE Consults'];
-      if (sched && sched.total != null) scheduled += sched.total;
-      if (liveM && liveM.total != null) live += liveM.total;
+    for (const closer of CLOSERS) {
+      const stats = iclosedByCloser?.[closer.id];
+      if (!stats) continue;
+      scheduled += stats.scheduled || 0;
+      live += stats.live || 0;
     }
+    const decided = live; // showRate uses live/scheduled to match old sheet definition
     const showRate = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
     return { scheduled, live, showRate };
-  }, [sheetData]);
+  }, [iclosedByCloser]);
 
   // Compare metrics
   const compareDeals = useMemo(() => compareRange ? salesDeals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [salesDeals, compareRange]);
@@ -106,20 +101,18 @@ export default function Overview() {
     return (receipts || []).filter((r) => !r.success && new Date(r.received_at) >= thirtyDaysAgo);
   }, [receipts]);
 
-  // Closer leaderboard
+  // Closer leaderboard — now powered by iClosed for all 6 closers, not just lloyd/dave/zak
   const leaderboard = useMemo(() => {
-    if (!sheetData) return [];
-    return ['lloyd', 'dave', 'zak'].map((closerId) => {
-      const closer = CLOSERS.find((c) => c.id === closerId);
-      const closerDeals = rangeDeals.filter((d) => d.closer_id === closerId);
+    return CLOSERS.map((closer) => {
+      const closerDeals = rangeDeals.filter((d) => d.closer_id === closer.id);
       const revenue = closerDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
       const pifCount = closerDeals.filter((d) => !Number(d.monthly_amount)).length;
       const pifRatio = closerDeals.length > 0 ? pifCount / closerDeals.length : 0;
 
-      const stats = sheetData[closerId];
-      const scheduled = stats && !stats.error ? (stats.metrics['SCHEDULED Consults']?.total ?? 0) : 0;
-      const live = stats && !stats.error ? (stats.metrics['LIVE Consults']?.total ?? 0) : 0;
-      const closes = stats && !stats.error ? (stats.metrics['Closes']?.total ?? 0) : 0;
+      const stats = iclosedByCloser?.[closer.id] || { scheduled: 0, live: 0, closes: 0 };
+      const scheduled = stats.scheduled || 0;
+      const live = stats.live || 0;
+      const closes = stats.closes || 0;
       const showRate = scheduled > 0 ? live / scheduled : 0;
       const closeRate = live > 0 ? closes / live : 0;
 
@@ -128,7 +121,7 @@ export default function Overview() {
 
       return { ...closer, revenue, closesCount: closerDeals.length, showRate, closeRate, pifRatio, score, scheduled, live, closes };
     }).sort((a, b) => b.score - a.score);
-  }, [sheetData, rangeDeals]);
+  }, [iclosedByCloser, rangeDeals]);
 
   // Weekly revenue chart data
   const chartData = useMemo(() => {
@@ -258,12 +251,10 @@ export default function Overview() {
         <MetricCard
           title="Calls Booked"
           value={callStats.scheduled}
-          subtitle={sheetMonth}
         />
         <MetricCard
           title="Calls Taken"
           value={callStats.live}
-          subtitle={sheetMonth}
         />
         <MetricCard
           title="Show Rate"
@@ -336,7 +327,7 @@ export default function Overview() {
         {/* Closer Leaderboard */}
         {leaderboard.length > 0 && (
           <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
-            <h3 className="text-sm font-medium text-gray-400 mb-4">Closer Leaderboard ({sheetMonth})</h3>
+            <h3 className="text-sm font-medium text-gray-400 mb-4">Closer Leaderboard</h3>
             <div className="space-y-3">
               {leaderboard.map((closer, i) => (
                 <div key={closer.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
@@ -392,36 +383,30 @@ export default function Overview() {
 
         {/* Call Stats by Closer */}
         <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
-          <h3 className="text-sm font-medium text-gray-400 mb-4">Call Stats ({sheetMonth})</h3>
-          {!sheetData ? (
-            <p className="text-gray-500 text-sm text-center py-4">Loading call data...</p>
-          ) : (
-            <div className="space-y-4">
-              {['lloyd', 'dave', 'zak'].map((closerId) => {
-                const closer = CLOSERS.find((c) => c.id === closerId);
-                const stats = sheetData[closerId];
-                if (!closer || !stats || stats.error) return null;
-                const scheduled = stats.metrics['SCHEDULED Consults']?.total ?? 0;
-                const live = stats.metrics['LIVE Consults']?.total ?? 0;
-                const showPct = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
-                const offers = stats.metrics['Offers']?.total ?? 0;
-                const closes = stats.metrics['Closes']?.total ?? 0;
-                return (
-                  <div key={closerId} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
-                    <CloserAvatar closerId={closerId} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{closer.name}</p>
-                      <p className="text-xs text-gray-500">{scheduled} booked · {live} taken · {showPct}% show</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">{closes} <span className="text-xs text-gray-500">closes</span></p>
-                      <p className="text-xs text-gray-500">{offers} offers</p>
-                    </div>
+          <h3 className="text-sm font-medium text-gray-400 mb-4">Call Stats by Closer</h3>
+          <div className="space-y-4">
+            {CLOSERS.map((closer) => {
+              const stats = iclosedByCloser?.[closer.id];
+              if (!stats) return null;
+              const scheduled = stats.scheduled || 0;
+              const live = stats.live || 0;
+              const closes = stats.closes || 0;
+              const showPct = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
+              if (scheduled === 0 && live === 0 && closes === 0) return null;
+              return (
+                <div key={closer.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
+                  <CloserAvatar closerId={closer.id} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{closer.name}</p>
+                    <p className="text-xs text-gray-500">{scheduled} booked · {live} taken · {showPct}% show</p>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <div className="text-right">
+                    <p className="text-sm font-semibold">{closes} <span className="text-xs text-gray-500">closes</span></p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

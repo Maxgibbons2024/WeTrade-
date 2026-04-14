@@ -21,6 +21,10 @@ export const MENTORS = [
   { id: 'sam', name: 'Sam Ducker', initials: 'SD', color: '#F59E0B' },
 ];
 
+export const SETTERS = [
+  { id: 'kai', name: 'Kai Reeve', initials: 'KR', color: '#8B5CF6' },
+];
+
 export const PACKAGES = [
   { id: '10_sessions', label: '10 Sessions', sessionsTotal: 10 },
   { id: 'pro_group', label: 'Pro Group', sessionsTotal: null },
@@ -63,6 +67,10 @@ export function getCloser(id) {
 
 export function getMentor(id) {
   return MENTORS.find((m) => m.id === id) || { id, name: id, initials: '??', color: '#6B7280' };
+}
+
+export function getSetter(id) {
+  return SETTERS.find((s) => s.id === id) || { id, name: id, initials: '??', color: '#6B7280' };
 }
 
 export function getMonthStart() {

@@ -17,7 +17,7 @@ import ErrorState from '../components/ErrorState';
 import { useQuery } from '../hooks/useSupabase';
 import { CLOSERS, formatCurrency, isInDateRange, isCommunityOnly } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
-import useSheetStats from '../hooks/useSheetStats';
+import useIclosedStats from '../hooks/useIclosedStats';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -26,11 +26,7 @@ export default function Closers() {
   const [expandedCloser, setExpandedCloser] = useState(null);
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'];
-  // Use the month from the date range filter's start date
-  const sheetMonth = dateRange.start ? monthNames[dateRange.start.getMonth()] : monthNames[new Date().getMonth()];
-  const { data: sheetData, loading: sheetsLoading } = useSheetStats(sheetMonth);
+  const { byCloser: iclosedByCloser, daily: iclosedDaily } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dl, error: de } = useQuery('deals');
   const { data: eodCalls, loading: el, error: ee } = useQuery('eod_calls');
@@ -49,9 +45,10 @@ export default function Closers() {
       const closerPlans = paymentPlans.filter((p) => p.closer_id === closer.id);
       const rangeFathom = fathomCalls.filter((f) => f.closer_id === closer.id && isInDateRange(f.call_date, dateRange.start, dateRange.end));
 
-      const totalCalls = rangeEod.length;
-      const noShows = rangeEod.filter((c) => c.outcome === 'no_show').length;
-      const showRate = totalCalls > 0 ? Math.round(((totalCalls - noShows) / totalCalls) * 100) : 0;
+      const iclosedStats = iclosedByCloser?.[closer.id] || { scheduled: 0, live: 0, noShows: 0, showRate: 0, closes: 0 };
+      const totalCalls = iclosedStats.scheduled;
+      const noShows = iclosedStats.noShows;
+      const showRate = iclosedStats.showRate;
 
       const rangeRevenue = rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
       // Get PP collections from receipts in date range
@@ -83,6 +80,8 @@ export default function Closers() {
         avgDealSize,
         noShowCount: noShows,
         totalCalls,
+        liveCalls: iclosedStats.live,
+        iclosedCloses: iclosedStats.closes,
         fathomTotalCalls,
         fathomTotalTalkTime,
         fathomAvgDuration,
@@ -94,7 +93,7 @@ export default function Closers() {
         closerPlans,
       };
     });
-  }, [deals, eodCalls, paymentPlans, fathomCalls, receipts, dateRange]);
+  }, [deals, eodCalls, paymentPlans, fathomCalls, receipts, dateRange, iclosedByCloser]);
 
   const displayed = filter === 'all' ? closerStats : closerStats.filter((c) => c.id === filter);
 
@@ -289,28 +288,19 @@ export default function Closers() {
                     </div>
                   </div>
 
-                  {/* Conversion Funnel */}
-                  {sheetData && sheetData[stat.id] && !sheetData[stat.id].error && (() => {
-                    const m = sheetData[stat.id].metrics;
-                    const scheduled = m['SCHEDULED Consults']?.total ?? 0;
-                    const live = m['LIVE Consults']?.total ?? 0;
-                    const offers = m['Offers']?.total ?? 0;
-                    const deposits = m['Deposits']?.total ?? 0;
-                    const closes = m['Closes']?.total ?? 0;
-                    if (scheduled === 0) return null;
+                  {/* Conversion Funnel (iClosed) */}
+                  {stat.totalCalls > 0 && (() => {
                     const stages = [
-                      { label: 'Scheduled', value: scheduled, color: '#6B7280' },
-                      { label: 'Showed', value: live, color: '#27CCE7' },
-                      { label: 'Offered', value: offers, color: '#F59E0B' },
-                      { label: 'Deposited', value: deposits, color: '#8B5CF6' },
-                      { label: 'Closed', value: closes, color: '#10B981' },
+                      { label: 'Scheduled', value: stat.totalCalls, color: '#6B7280' },
+                      { label: 'Showed', value: stat.liveCalls, color: '#27CCE7' },
+                      { label: 'Closed', value: stat.iclosedCloses, color: '#10B981' },
                     ];
                     return (
                       <div>
-                        <h4 className="text-xs text-gray-500 font-medium mb-2">Conversion Funnel ({sheetMonth})</h4>
+                        <h4 className="text-xs text-gray-500 font-medium mb-2">Conversion Funnel</h4>
                         <div className="space-y-1.5">
                           {stages.map((stage, i) => {
-                            const pct = scheduled > 0 ? (stage.value / scheduled) * 100 : 0;
+                            const pct = stat.totalCalls > 0 ? (stage.value / stat.totalCalls) * 100 : 0;
                             const prevVal = i > 0 ? stages[i - 1].value : null;
                             const dropoff = prevVal && prevVal > 0 ? Math.round((stage.value / prevVal) * 100) : null;
                             return (
@@ -377,50 +367,65 @@ export default function Closers() {
                     )}
                   </div>
 
-                  {/* Daily Call Stats from Google Sheets */}
-                  {sheetData && sheetData[stat.id] && !sheetData[stat.id].error && (
-                    <div>
-                      <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity ({sheetMonth})</h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="text-gray-500">
-                              <th className="text-left py-1 pr-2 font-medium">Metric</th>
-                              {sheetData[stat.id].days.slice(-7).map((day) => (
-                                <th key={day} className="text-center py-1 px-1 font-medium min-w-[40px]">{day}</th>
-                              ))}
-                              <th className="text-center py-1 pl-2 font-semibold text-gray-400">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {['SCHEDULED Consults', 'LIVE Consults', 'Show %', 'Offers', 'Closes'].map((metric) => {
-                              const metricData = sheetData[stat.id].metrics[metric];
-                              if (!metricData) return null;
-                              const days = sheetData[stat.id].days;
-                              const lastDays = days.slice(-7);
-                              const dailyValues = metricData.daily.slice(-7);
-                              const isPercent = metric.includes('%');
-                              return (
-                                <tr key={metric} className="border-t border-gray-800/50">
-                                  <td className="py-1.5 pr-2 text-gray-400 font-medium whitespace-nowrap">{metric}</td>
-                                  {dailyValues.map((val, i) => (
-                                    <td key={lastDays[i]} className="text-center py-1.5 px-1">
-                                      <span className={val != null ? 'text-white' : 'text-gray-700'}>
-                                        {val != null ? (isPercent ? `${Math.round(val * 100)}%` : val) : '-'}
-                                      </span>
-                                    </td>
-                                  ))}
-                                  <td className="text-center py-1.5 pl-2 font-semibold text-brand-cyan">
-                                    {metricData.total != null ? (isPercent ? `${Math.round(metricData.total * 100)}%` : metricData.total) : '-'}
-                                  </td>
+                  {/* Daily Call Activity (iClosed) */}
+                  {(iclosedDaily?.[stat.id]?.length || 0) > 0 && (() => {
+                    const series = iclosedDaily[stat.id].slice(-7);
+                    const totals = series.reduce(
+                      (acc, d) => {
+                        acc.scheduled += d.scheduled;
+                        acc.live += d.live;
+                        acc.closes += d.closes;
+                        return acc;
+                      },
+                      { scheduled: 0, live: 0, closes: 0 }
+                    );
+                    const showPct = totals.scheduled > 0 ? Math.round((totals.live / totals.scheduled) * 100) : 0;
+                    const rows = [
+                      { label: 'Scheduled', key: 'scheduled', total: totals.scheduled },
+                      { label: 'Live', key: 'live', total: totals.live },
+                      { label: 'Closes', key: 'closes', total: totals.closes },
+                      { label: 'Show %', key: 'pct', total: `${showPct}%` },
+                    ];
+                    return (
+                      <div>
+                        <h4 className="text-xs text-gray-500 font-medium mb-2">Daily Call Activity (last 7 days)</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-gray-500">
+                                <th className="text-left py-1 pr-2 font-medium">Metric</th>
+                                {series.map((d) => (
+                                  <th key={d.date} className="text-center py-1 px-1 font-medium min-w-[40px]">{d.date.slice(5)}</th>
+                                ))}
+                                <th className="text-center py-1 pl-2 font-semibold text-gray-400">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((row) => (
+                                <tr key={row.label} className="border-t border-gray-800/50">
+                                  <td className="py-1.5 pr-2 text-gray-400 font-medium whitespace-nowrap">{row.label}</td>
+                                  {series.map((d) => {
+                                    let val;
+                                    if (row.key === 'pct') {
+                                      val = d.scheduled > 0 ? `${Math.round((d.live / d.scheduled) * 100)}%` : '-';
+                                    } else {
+                                      val = d[row.key] || 0;
+                                    }
+                                    return (
+                                      <td key={d.date} className="text-center py-1.5 px-1">
+                                        <span className={val && val !== '-' ? 'text-white' : 'text-gray-700'}>{val || '-'}</span>
+                                      </td>
+                                    );
+                                  })}
+                                  <td className="text-center py-1.5 pl-2 font-semibold text-brand-cyan">{row.total}</td>
                                 </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </div>

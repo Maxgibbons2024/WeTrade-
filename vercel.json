@@ -6,6 +6,10 @@
     {
       "path": "/api/fathom/sync",
       "schedule": "0 22 * * 1-5"
+    },
+    {
+      "path": "/api/iclosed/sync",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
