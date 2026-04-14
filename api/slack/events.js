@@ -99,16 +99,21 @@ function parseDeal(text) {
   }
 
   // If no dash format, try to extract name from start of message
-  // Pattern: "FirstName LastName <deal details...>"
+  // Pattern: "FirstName [LastName...] <deal details...>"
+  // The second-word group uses * (not +) so single-word names like "Maria"
+  // still match — otherwise the parser silently drops them.
   if (!clientName) {
-    const nameMatch = text.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?=.*(?:\d+k|\d+\s*(?:down|p\/m|per month)|£|kickstarter|mechanical|pro|elite))/i);
+    const nameMatch = text.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?=.*(?:\d+k|\d+\s*(?:down|p\/m|per month)|£|kickstarter|mechanical|pro|elite))/i);
     if (nameMatch) {
       clientName = nameMatch[1].trim();
       details = text.substring(clientName.length).trim();
     }
   }
 
-  if (!clientName) return null;
+  if (!clientName) {
+    console.warn('[slack/events] parseDeal dropped message — no client name extracted:', text.slice(0, 120));
+    return null;
+  }
 
   let frontEnd = 0;
   const feK = details.match(/(\d+(?:\.\d+)?)\s*k\s*(?:down|upfront|paid)?/i);
@@ -133,7 +138,10 @@ function parseDeal(text) {
   }
 
   // Reject if no financial data extracted
-  if (frontEnd === 0 && monthlyAmount === 0) return null;
+  if (frontEnd === 0 && monthlyAmount === 0) {
+    console.warn('[slack/events] parseDeal dropped message — no £ or p/m amount extracted:', text.slice(0, 120));
+    return null;
+  }
 
   let programme = 'Kickstarter';
   const progMatch = details.match(/\b(Kickstarter|Mechanical\s*Mastery|Pro|Elite)\b/i);
