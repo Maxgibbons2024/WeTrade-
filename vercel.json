@@ -2,6 +2,9 @@
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
+  "functions": {
+    "api/iclosed/sync.js": { "maxDuration": 300 }
+  },
   "crons": [
     {
       "path": "/api/fathom/sync",

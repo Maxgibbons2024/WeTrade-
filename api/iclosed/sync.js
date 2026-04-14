@@ -181,10 +181,14 @@ export default async function handler(req, res) {
   }
 
   const supabase = getSupabaseAdmin();
+  const t0 = Date.now();
+  const timings = {};
+  const mark = (label) => { timings[label] = Date.now() - t0; };
 
   try {
     // 1. Auto-seed iclosed_users on first run
     const seedResult = await seedUsersIfEmpty(supabase);
+    mark('afterSeed');
 
     // 2. Decide date window: explicit query > auto-backfill (if calls table empty) > last 7 days
     let since = req.query?.since;
@@ -207,11 +211,14 @@ export default async function handler(req, res) {
     const userMap = new Map((users || []).map((u) => [String(u.iclosed_user_id), u]));
 
     // Fetch event calls. iClosed supports `from`/`to` query params per docs.
+    // Larger page size = fewer sequential HTTP round-trips (the main wall-time cost on a full backfill).
+    const pageSize = Number(req.query?.pageSize) || 500;
     const path = `/v1/eventCalls?from=${encodeURIComponent(since)}T00:00:00Z&to=${encodeURIComponent(until)}T23:59:59Z`;
-    const rawCalls = await iclosedListAll(path, { pageSize: 100, maxPages: 100 });
+    const rawCalls = await iclosedListAll(path, { pageSize, maxPages: 200 });
+    mark('afterFetch');
 
     if (!rawCalls.length) {
-      return res.status(200).json({ ok: true, processed: 0, matched: 0, message: 'No calls returned by iClosed', since, until });
+      return res.status(200).json({ ok: true, processed: 0, matched: 0, message: 'No calls returned by iClosed', since, until, timings });
     }
 
     // Pre-load deals for matching (only need email + name + id + front_end + created_at)
@@ -219,6 +226,7 @@ export default async function handler(req, res) {
       .from('deals')
       .select('id, client_name, email, front_end, created_at');
     if (dealsErr) throw dealsErr;
+    mark('afterDeals');
 
     // Build lookup maps for deal matching
     const dealsByEmail = new Map();
@@ -275,6 +283,7 @@ export default async function handler(req, res) {
     }
     const dedupedRows = Array.from(byId.values());
     const matched = dedupedRows.filter((r) => r.deal_id).length;
+    mark('afterNormalise');
 
     // Upsert in batches of 500 to stay within Supabase row limits
     let processed = 0;
@@ -287,6 +296,7 @@ export default async function handler(req, res) {
       if (upErr) errors.push(upErr.message);
       else processed += batch.length;
     }
+    mark('afterUpsert');
 
     return res.status(200).json({
       ok: true,
@@ -296,6 +306,7 @@ export default async function handler(req, res) {
       deduped: dedupedRows.length,
       processed,
       matched,
+      timings,
       seeded: seedResult.seeded,
       errors: errors.length ? errors : undefined,
     });
