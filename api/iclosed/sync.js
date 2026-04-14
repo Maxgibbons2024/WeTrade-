@@ -207,11 +207,21 @@ export default async function handler(req, res) {
       };
     });
 
+    // Dedupe by id — iClosed sometimes returns the same call across pages,
+    // and Postgres upsert refuses batches that conflict on the same key twice
+    // ("ON CONFLICT command cannot affect row a second time"). Keep the last
+    // occurrence so newer data wins.
+    const byId = new Map();
+    for (const r of rows) {
+      if (r.id) byId.set(r.id, r);
+    }
+    const dedupedRows = Array.from(byId.values());
+
     // Upsert in batches of 500 to stay within Supabase row limits
     let processed = 0;
     const errors = [];
-    for (let i = 0; i < rows.length; i += 500) {
-      const batch = rows.slice(i, i + 500);
+    for (let i = 0; i < dedupedRows.length; i += 500) {
+      const batch = dedupedRows.slice(i, i + 500);
       const { error: upErr } = await supabase
         .from('iclosed_calls')
         .upsert(batch, { onConflict: 'id' });
@@ -223,6 +233,8 @@ export default async function handler(req, res) {
       ok: true,
       since,
       until,
+      fetched: rows.length,
+      deduped: dedupedRows.length,
       processed,
       matched,
       seeded: seedResult.seeded,
