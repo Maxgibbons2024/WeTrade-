@@ -92,39 +92,55 @@ function extractItems(json) {
 /**
  * Page through a list endpoint until exhausted.
  *
- * iClosed ignores `offset` on /v1/eventCalls (verified empirically — it returns
- * the same first page over and over), so we use `page=N` (1-indexed) instead.
- * We also short-circuit if a page adds zero new ids, which protects against
- * any pagination param being silently ignored in future.
+ * iClosed caps `limit` at 100 and ignores `offset` on /v1/eventCalls, so we
+ * use `page=N` (1-indexed). To stay under Vercel's function timeout on full
+ * backfills (~68 pages × ~1s serial) we fetch pages in parallel batches.
+ * Our iclosedFetch already handles 429 retries, which guards us against
+ * rate-limit blowback from the concurrency.
  */
-export async function iclosedListAll(path, { pageSize = 100, maxPages = 200 } = {}) {
+export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, concurrency = 5 } = {}) {
   const seen = new Set();
   const all = [];
   const sep = path.includes('?') ? '&' : '?';
 
-  for (let page = 1; page <= maxPages; page++) {
+  const fetchPage = async (page) => {
     const url = `${path}${sep}limit=${pageSize}&page=${page}`;
     const json = await iclosedFetch(url);
-    const items = extractItems(json);
+    return extractItems(json);
+  };
 
-    if (!items.length) break;
+  let nextPage = 1;
+  let stop = false;
 
-    // Count how many of this page's items we haven't already seen.
-    let added = 0;
-    for (const item of items) {
-      const id = item?.id ?? item?.callId ?? item?.userId;
-      const key = id != null ? String(id) : JSON.stringify(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      all.push(item);
-      added += 1;
+  while (!stop && nextPage <= maxPages) {
+    // Fire a batch of `concurrency` sequential pages in parallel
+    const batch = [];
+    for (let i = 0; i < concurrency && nextPage + i <= maxPages; i++) {
+      batch.push(fetchPage(nextPage + i));
     }
+    const results = await Promise.all(batch);
+    nextPage += results.length;
 
-    // Pagination param is being ignored — bail rather than spin forever.
-    if (added === 0) break;
+    for (const items of results) {
+      if (!items.length) { stop = true; continue; }
 
-    // Last page — fewer results than the page size.
-    if (items.length < pageSize) break;
+      let added = 0;
+      for (const item of items) {
+        const id = item?.id ?? item?.callId ?? item?.userId;
+        const key = id != null ? String(id) : JSON.stringify(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push(item);
+        added += 1;
+      }
+
+      // No new ids on this page → pagination param was ignored, bail out
+      // rather than looping.
+      if (added === 0) { stop = true; }
+
+      // Short page → last page of the result set.
+      if (items.length < pageSize) { stop = true; }
+    }
   }
 
   return all;

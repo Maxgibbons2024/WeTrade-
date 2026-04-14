@@ -211,10 +211,11 @@ export default async function handler(req, res) {
     const userMap = new Map((users || []).map((u) => [String(u.iclosed_user_id), u]));
 
     // Fetch event calls. iClosed supports `from`/`to` query params per docs.
-    // Larger page size = fewer sequential HTTP round-trips (the main wall-time cost on a full backfill).
-    const pageSize = Number(req.query?.pageSize) || 500;
+    // iClosed caps `limit` at 100, so we rely on parallel page fetching in
+    // iclosedListAll (concurrency=5 by default) to stay under the function
+    // timeout on full backfills.
     const path = `/v1/eventCalls?from=${encodeURIComponent(since)}T00:00:00Z&to=${encodeURIComponent(until)}T23:59:59Z`;
-    const rawCalls = await iclosedListAll(path, { pageSize, maxPages: 200 });
+    const rawCalls = await iclosedListAll(path, { pageSize: 100, maxPages: 200, concurrency: 5 });
     mark('afterFetch');
 
     if (!rawCalls.length) {
