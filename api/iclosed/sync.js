@@ -305,5 +305,7 @@ export default async function handler(req, res) {
   }
 }
 
-// Avoid being parsed by Vercel as edge runtime
-export const config = { runtime: 'nodejs' };
+// Avoid being parsed by Vercel as edge runtime.
+// maxDuration: full backfills fetch ~70 pages from iClosed sequentially
+// plus deal matching + upserts, which can run past the 60s default on Pro.
+export const config = { runtime: 'nodejs', maxDuration: 300 };
