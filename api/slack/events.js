@@ -218,16 +218,77 @@ function parseEod(text) {
 }
 
 // ---- Payment notification parsing ----
-// Format: "True £5000.00 Julian Boden" or "False £500.00 John Smith"
+// Supports several message shapes seen in the #payments Slack channel.
+// Returns { success, amount, client_name } or null if nothing matched.
+//
+// Every exit returns null via `dropped(reason)` so parser drops show up in
+// Vercel logs — silent drops have bitten us before (e.g. the £500 "car"
+// message was stored with client_name "car", and the "succeeded" / human
+// bank-transfer messages were dropped entirely).
 function parsePaymentNotification(text) {
   if (!text) return null;
-  const match = text.match(/^(True|False)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+(.+)$/i);
-  if (!match) return null;
-  return {
-    success: match[1].toLowerCase() === 'true',
-    amount: parseFloat(match[2].replace(/,/g, '')),
-    client_name: match[3].trim(),
+  const trimmed = text.trim();
+
+  const dropped = (reason) => {
+    console.warn(`[slack/events] parsePaymentNotification dropped (${reason}):`, trimmed.slice(0, 200));
+    return null;
   };
+
+  // 1. Classic Zapier format: "True £5000.00 Julian Boden" / "False £500.00 John Smith"
+  const zapier = trimmed.match(/^(True|False)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+(.+)$/i);
+  if (zapier) {
+    return {
+      success: zapier[1].toLowerCase() === 'true',
+      amount: parseFloat(zapier[2].replace(/,/g, '')),
+      client_name: zapier[3].trim(),
+    };
+  }
+
+  // 2. Stripe "succeeded" format: "succeeded <identifier> <amount>"
+  //    Identifier may be an email, a name, or something like "Mr R Monteiro Matarazzo".
+  //    Amount is the last whitespace-separated token, optionally £-prefixed.
+  const succeeded = trimmed.match(/^succeeded\s+(.+?)\s+£?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s*$/i);
+  if (succeeded) {
+    return {
+      success: true,
+      amount: parseFloat(succeeded[2].replace(/,/g, '')),
+      client_name: succeeded[1].trim(),
+    };
+  }
+
+  // 3. Stripe failure lines: "<error text>requires_payment_method <name> <email> £X"
+  //    We record these as failed attempts rather than dropping them — useful for
+  //    chasing declined cards. Example: "Your card has insufficient funds.requires_payment_method David Paines davidpaines71@gmail.com £1000"
+  const failed = trimmed.match(/requires_payment_method\s+(.+?)\s+\S+@\S+\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)/i);
+  if (failed) {
+    return {
+      success: false,
+      amount: parseFloat(failed[2].replace(/,/g, '')),
+      client_name: failed[1].trim(),
+    };
+  }
+
+  // 4. Hand-typed bank transfer, amount first: "£1,000 bank transfer Arasartnam Puvanenthiran"
+  const bankFirst = trimmed.match(/^£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+bank\s*transfer\s+(.+)$/i);
+  if (bankFirst) {
+    return {
+      success: true,
+      amount: parseFloat(bankFirst[1].replace(/,/g, '')),
+      client_name: bankFirst[2].trim(),
+    };
+  }
+
+  // 5. Hand-typed bank transfer, name first: "Alan OConnor £1,000 Bank transfer"
+  const bankLast = trimmed.match(/^(.+?)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+bank\s*transfer\s*$/i);
+  if (bankLast) {
+    return {
+      success: true,
+      amount: parseFloat(bankLast[2].replace(/,/g, '')),
+      client_name: bankLast[1].trim(),
+    };
+  }
+
+  return dropped('no pattern matched');
 }
 
 // ---- Session booking parsing (Calendly via Zapier) ----
@@ -333,7 +394,11 @@ export default async function handler(req, res) {
       let paymentPlanId = null;
       let matched = false;
 
-      if (matchedPlans && matchedPlans.length === 1) {
+      // Only bump a plan's total_collected on a SUCCESSFUL payment. Failed
+      // attempts (declined cards, insufficient funds, etc.) are still
+      // recorded as receipts so the merge UI can show them, but they must
+      // not affect the plan's cash totals.
+      if (payment.success && matchedPlans && matchedPlans.length === 1) {
         const plan = matchedPlans[0];
         paymentPlanId = plan.id;
         matched = true;

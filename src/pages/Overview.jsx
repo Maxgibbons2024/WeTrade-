@@ -32,13 +32,14 @@ export default function Overview() {
   const { data: paymentPlans, loading: plansLoading, error: plansError, refetch: refetchPlans } = useQuery('payment_plans');
 
   const { data: receipts, loading: receiptsLoading } = useQuery('payment_receipts');
+  const { data: manualPayments, loading: manualLoading } = useQuery('manual_payments');
 
   const handleRealtimeDeals = useCallback(() => { refetchDeals(); }, [refetchDeals]);
   const handleRealtimePlans = useCallback(() => { refetchPlans(); }, [refetchPlans]);
   useRealtime('deals', handleRealtimeDeals);
   useRealtime('payment_plans', handleRealtimePlans);
 
-  const loading = dealsLoading || plansLoading || receiptsLoading;
+  const loading = dealsLoading || plansLoading || receiptsLoading || manualLoading;
   const error = dealsError || plansError;
 
   // Filtered metrics
@@ -47,8 +48,15 @@ export default function Overview() {
   const frontEndCollected = useMemo(() => rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [rangeDeals]);
 
   // Cash collected = front end from deals + successful payment receipts in range
+  //                + manual payments (bank transfers, PayPal, Mamo) in range.
+  // manual_payments uses `payment_date` whereas payment_receipts uses `received_at`.
   const rangeReceipts = useMemo(() => (receipts || []).filter((r) => r.success && isInDateRange(r.received_at, dateRange.start, dateRange.end)), [receipts, dateRange]);
-  const ppCollected = useMemo(() => rangeReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0), [rangeReceipts]);
+  const rangeManual = useMemo(() => (manualPayments || []).filter((p) => isInDateRange(p.payment_date, dateRange.start, dateRange.end)), [manualPayments, dateRange]);
+  const ppCollected = useMemo(() => {
+    const stripeTotal = rangeReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const manualTotal = rangeManual.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    return stripeTotal + manualTotal;
+  }, [rangeReceipts, rangeManual]);
   const totalCashCollected = frontEndCollected + ppCollected;
 
   // iClosed call stats (aggregated across all closers in the date range)
