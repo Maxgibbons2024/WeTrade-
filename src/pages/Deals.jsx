@@ -39,8 +39,10 @@ const EMPTY_FORM = {
 };
 
 export default function Deals() {
+  const [tab, setTab] = useState('deals'); // 'deals' | 'transactions'
   const [filterCloser, setFilterCloser] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [txTypeFilter, setTxTypeFilter] = useState('all'); // 'all' | 'new_cash' | 'payment_plan' | 'failed'
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
   const [viewingDeal, setViewingDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -53,6 +55,7 @@ export default function Deals() {
   });
   const { data: paymentPlans } = useQuery('payment_plans');
   const { data: receipts } = useQuery('payment_receipts', { order: { column: 'received_at', ascending: false } });
+  const { data: manualPayments } = useQuery('manual_payments', { order: { column: 'payment_date', ascending: false } });
   const { data: fathomCalls } = useQuery('fathom_calls');
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
@@ -77,6 +80,158 @@ export default function Deals() {
       return hasPaymentInRange;
     });
   }, [deals, filterCloser, filterStatus, dateRange, paymentPlans, receipts]);
+
+  // ---- Unified transaction ledger ----
+  // Combines three cash sources into a single date-sorted list so the user can
+  // reconcile against their manual spreadsheet and see every £ with its origin.
+  // Classification rule (matches how the user thinks about it):
+  //   - deals.front_end          → "New Cash"  (the initial payment on a new deal)
+  //   - receipts with plan_id    → "Payment Plan" (installment on an existing plan)
+  //   - receipts without plan_id → "New Cash"  (first payment not yet linked)
+  //   - failed receipts          → "Failed"    (tracked separately, excluded from totals)
+  //   - manual_payments          → "New Cash"  unless the linked deal has a plan,
+  //                                then "Payment Plan" (bank-transfer installment)
+  const transactions = useMemo(() => {
+    const rows = [];
+    // Deals → new cash
+    for (const d of (deals || [])) {
+      if (isCommunityOnly(d)) continue;
+      if (!d.front_end || Number(d.front_end) === 0) continue;
+      rows.push({
+        id: `deal-${d.id}`,
+        date: d.created_at,
+        client: d.client_name,
+        amount: Number(d.front_end),
+        type: 'new_cash',
+        closer_id: d.closer_id,
+        closer_name: d.closer_name,
+        source: d.source || 'manual',
+        success: true,
+        origin: 'deal',
+        ref: d,
+      });
+    }
+    // Payment receipts → installment or first-payment
+    for (const r of (receipts || [])) {
+      if (!r.amount || Number(r.amount) === 0) continue;
+      const plan = r.payment_plan_id ? (paymentPlans || []).find((p) => p.id === r.payment_plan_id) : null;
+      const linkedDeal = r.deal_id ? (deals || []).find((d) => d.id === r.deal_id) : null;
+      const closerId = plan?.closer_id || linkedDeal?.closer_id || null;
+      const closer = CLOSERS.find((c) => c.id === closerId);
+      let type;
+      if (!r.success) type = 'failed';
+      else if (r.payment_plan_id) type = 'payment_plan';
+      else type = 'new_cash';
+      rows.push({
+        id: `rcpt-${r.id}`,
+        date: r.received_at,
+        client: r.client_name,
+        amount: Number(r.amount),
+        type,
+        closer_id: closerId,
+        closer_name: closer?.name || (closerId ? closerId : '—'),
+        source: 'stripe',
+        success: r.success,
+        origin: 'receipt',
+        ref: r,
+      });
+    }
+    // Manual payments → new cash unless linked to a deal that has a plan
+    for (const m of (manualPayments || [])) {
+      if (!m.amount || Number(m.amount) === 0) continue;
+      const linkedDeal = m.deal_id ? (deals || []).find((d) => d.id === m.deal_id) : null;
+      const linkedPlan = linkedDeal ? (paymentPlans || []).find((p) => p.deal_id === linkedDeal.id) : null;
+      const closerId = linkedDeal?.closer_id || null;
+      const closer = CLOSERS.find((c) => c.id === closerId);
+      rows.push({
+        id: `manual-${m.id}`,
+        date: m.payment_date,
+        client: m.client_name,
+        amount: Number(m.amount),
+        type: linkedPlan ? 'payment_plan' : 'new_cash',
+        closer_id: closerId,
+        closer_name: closer?.name || m.added_by || '—',
+        source: m.payment_method || 'manual',
+        success: true,
+        origin: 'manual',
+        ref: m,
+      });
+    }
+    return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [deals, receipts, manualPayments, paymentPlans]);
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      if (txTypeFilter !== 'all' && t.type !== txTypeFilter) return false;
+      if (filterCloser !== 'all' && t.closer_id !== filterCloser) return false;
+      if (dateRange.start && !isInDateRange(t.date, dateRange.start, dateRange.end)) return false;
+      return true;
+    });
+  }, [transactions, txTypeFilter, filterCloser, dateRange]);
+
+  const txTotals = useMemo(() => {
+    let newCash = 0, planCash = 0, failed = 0;
+    for (const t of filteredTransactions) {
+      if (t.type === 'new_cash') newCash += t.amount;
+      else if (t.type === 'payment_plan') planCash += t.amount;
+      else if (t.type === 'failed') failed += t.amount;
+    }
+    return { newCash, planCash, failed, total: newCash + planCash, count: filteredTransactions.length };
+  }, [filteredTransactions]);
+
+  const transactionColumns = [
+    { key: 'date', label: 'Date', render: (val) => <span className="text-xs text-gray-400">{formatDate(val)}</span> },
+    { key: 'client', label: 'Client', render: (val) => <span className="font-medium">{val || <span className="text-gray-600 italic">unknown</span>}</span> },
+    {
+      key: 'amount',
+      label: 'Amount',
+      render: (val, row) => (
+        <span className={`font-semibold ${row.type === 'failed' ? 'text-red-400 line-through' : 'text-brand-cyan'}`}>
+          {formatCurrency(val)}
+        </span>
+      ),
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      render: (val) => {
+        const styles = {
+          new_cash:     'bg-green-500/10 text-green-400 border-green-500/30',
+          payment_plan: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+          failed:       'bg-red-500/10 text-red-400 border-red-500/30',
+        };
+        const labels = { new_cash: 'New Cash', payment_plan: 'Payment Plan', failed: 'Failed' };
+        return (
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${styles[val] || 'bg-gray-500/10 text-gray-400 border-gray-500/30'}`}>
+            {labels[val] || val}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'closer_id',
+      label: 'Closer',
+      render: (val, row) => val ? (
+        <div className="flex items-center gap-2">
+          <CloserAvatar closerId={val} size="sm" />
+          <span className="text-xs">{row.closer_name}</span>
+        </div>
+      ) : <span className="text-xs text-gray-600">—</span>,
+    },
+    {
+      key: 'source',
+      label: 'Source',
+      render: (val) => <span className="text-xs text-gray-500 capitalize">{(val || '').replace(/_/g, ' ')}</span>,
+    },
+    {
+      key: 'origin',
+      label: 'Origin',
+      render: (val) => {
+        const labels = { deal: 'Deal', receipt: 'Stripe', manual: 'Manual' };
+        return <span className="text-[10px] text-gray-500">{labels[val] || val}</span>;
+      },
+    },
+  ];
 
   const columns = [
     {
@@ -212,6 +367,26 @@ export default function Deals() {
         </button>
       </div>
 
+      {/* Tab toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setTab('deals')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'deals' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+          }`}
+        >
+          Deals
+        </button>
+        <button
+          onClick={() => setTab('transactions')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'transactions' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+          }`}
+        >
+          Transactions
+        </button>
+      </div>
+
       <DateRangeFilter preset={preset} setPreset={setPreset} presets={presets} customStart={customStart} customEnd={customEnd} setCustomStart={setCustomStart} setCustomEnd={setCustomEnd} />
 
       {/* Filters */}
@@ -224,21 +399,81 @@ export default function Deals() {
           <option value="all">All Closers</option>
           {CLOSERS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
-        >
-          <option value="all">All Statuses</option>
-          {DEAL_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-        </select>
+        {tab === 'deals' && (
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
+          >
+            <option value="all">All Statuses</option>
+            {DEAL_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+          </select>
+        )}
       </div>
 
-      <SortableTable
-        columns={columns}
-        data={filtered}
-        onRowClick={(row) => setViewingDeal(row)}
-      />
+      {tab === 'deals' && (
+        <SortableTable
+          columns={columns}
+          data={filtered}
+          onRowClick={(row) => setViewingDeal(row)}
+        />
+      )}
+
+      {tab === 'transactions' && (
+        <div className="space-y-4">
+          {/* Type filter pills */}
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'all',          label: 'All',          color: 'brand-cyan' },
+              { id: 'new_cash',     label: 'New Cash',     color: 'green-400' },
+              { id: 'payment_plan', label: 'Payment Plan', color: 'amber-400' },
+              { id: 'failed',       label: 'Failed',       color: 'red-400' },
+            ].map((pill) => (
+              <button
+                key={pill.id}
+                onClick={() => setTxTypeFilter(pill.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  txTypeFilter === pill.id
+                    ? 'bg-brand-cyan text-white'
+                    : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Running totals */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Total Cash</p>
+              <p className="text-xl font-bold text-brand-cyan">{formatCurrency(txTotals.total)}</p>
+              <p className="text-[10px] text-gray-600 mt-1">{txTotals.count} transaction{txTotals.count !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+              <p className="text-xs text-gray-500 mb-1">New Cash</p>
+              <p className="text-xl font-bold text-green-400">{formatCurrency(txTotals.newCash)}</p>
+              <p className="text-[10px] text-gray-600 mt-1">New deals + first payments</p>
+            </div>
+            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Payment Plan</p>
+              <p className="text-xl font-bold text-amber-400">{formatCurrency(txTotals.planCash)}</p>
+              <p className="text-[10px] text-gray-600 mt-1">Installments collected</p>
+            </div>
+            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Failed</p>
+              <p className="text-xl font-bold text-red-400">{formatCurrency(txTotals.failed)}</p>
+              <p className="text-[10px] text-gray-600 mt-1">Declined / insufficient</p>
+            </div>
+          </div>
+
+          <SortableTable
+            columns={transactionColumns}
+            data={filteredTransactions}
+            defaultSort={{ column: 'date', ascending: false }}
+          />
+        </div>
+      )}
 
 
       {/* Client detail slide-over */}
