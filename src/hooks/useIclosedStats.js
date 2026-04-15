@@ -112,5 +112,24 @@ export default function useIclosedStats(dateRange) {
     return result;
   }, [calls]);
 
-  return { calls, byCloser, daily, loading, error, refetch };
+  // Upcoming calls from "now" through end of today (local) — bypasses the
+  // past-only filter used by calls/byCloser/daily. Sorted chronologically,
+  // excludes cancelled.
+  const upcomingToday = useMemo(() => {
+    const now = new Date();
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+    const nowMs = now.getTime();
+    const endMs = endOfDay.getTime();
+    return (allCalls || [])
+      .filter((c) => {
+        if (isCancelled(c)) return false;
+        if (!c.scheduled_at) return false;
+        const t = new Date(c.scheduled_at).getTime();
+        return t >= nowMs && t <= endMs;
+      })
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+  }, [allCalls]);
+
+  return { calls, byCloser, daily, upcomingToday, loading, error, refetch };
 }

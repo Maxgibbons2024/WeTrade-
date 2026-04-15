@@ -23,7 +23,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 export default function Overview() {
   const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
-  const { byCloser: iclosedByCloser } = useIclosedStats(dateRange);
+  const { byCloser: iclosedByCloser, upcomingToday } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -408,6 +408,33 @@ export default function Overview() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* Upcoming calls today */}
+      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5 mt-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-gray-400">Upcoming Today</h3>
+          <span className="text-xs text-gray-500">{upcomingToday?.length || 0} scheduled</span>
+        </div>
+        {!upcomingToday?.length ? (
+          <p className="text-sm text-gray-500">No more calls scheduled for today.</p>
+        ) : (
+          <div className="space-y-2">
+            {upcomingToday.map((call) => {
+              const time = new Date(call.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+              return (
+                <div key={call.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
+                  <div className="text-brand-cyan font-mono text-sm font-semibold w-14 tabular-nums">{time}</div>
+                  {call.closer_id ? <CloserAvatar closerId={call.closer_id} /> : <div className="w-8 h-8 rounded-full bg-gray-800" />}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{call.contact_name || call.contact_email || 'Unknown'}</p>
+                    <p className="text-xs text-gray-500 truncate">{call.event_type || 'Call'}{call.utm_source ? ` · ${call.utm_source}` : ''}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
