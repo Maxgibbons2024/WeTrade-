@@ -45,9 +45,19 @@ export default function useIclosedStats(dateRange) {
   useRealtime('iclosed_calls', handleRealtime);
 
   // Filter to range — exclude cancelled (don't count against show rate)
+  // and exclude future calls so the dashboard shows "calls so far" rather
+  // than "calls scheduled" (future BOOKED rows would otherwise inflate the
+  // scheduled count and dilute the show rate).
   const calls = useMemo(() => {
-    if (!dateRange?.start) return (allCalls || []).filter((c) => !isCancelled(c));
-    return (allCalls || []).filter((c) => !isCancelled(c) && isInDateRange(c.scheduled_at, dateRange.start, dateRange.end));
+    const now = Date.now();
+    const base = (allCalls || []).filter((c) => {
+      if (isCancelled(c)) return false;
+      const t = c.scheduled_at ? new Date(c.scheduled_at).getTime() : 0;
+      if (t > now) return false;
+      return true;
+    });
+    if (!dateRange?.start) return base;
+    return base.filter((c) => isInDateRange(c.scheduled_at, dateRange.start, dateRange.end));
   }, [allCalls, dateRange?.start, dateRange?.end]);
 
   // Aggregate by closer
