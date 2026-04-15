@@ -7,7 +7,7 @@ import SlideOver from '../components/SlideOver';
 import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
-import { useQuery, useRealtime, insertRow } from '../hooks/useSupabase';
+import { useQuery, useRealtime, insertRow, updateRow, deleteRow } from '../hooks/useSupabase';
 import {
   formatCurrency,
   formatDate,
@@ -317,6 +317,12 @@ export default function Deals() {
     setShowForm(true);
   }
 
+  function closeForm() {
+    setShowForm(false);
+    setEditingDeal(null);
+    setForm(EMPTY_FORM);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.client_name.trim()) {
@@ -340,13 +346,33 @@ export default function Deals() {
         notes: dealFields.notes || null,
       };
       if (created_at) payload.created_at = new Date(created_at).toISOString();
-      await insertRow('deals', payload);
-      toast.success('Deal added successfully');
-      setForm(EMPTY_FORM);
-      setShowForm(false);
+      if (editingDeal) {
+        await updateRow('deals', editingDeal.id, payload);
+        toast.success('Deal updated');
+      } else {
+        await insertRow('deals', payload);
+        toast.success('Deal added successfully');
+      }
+      closeForm();
       refetch();
     } catch (err) {
-      toast.error(`Failed to add deal: ${err.message}`);
+      toast.error(`Failed to save deal: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteDeal() {
+    if (!editingDeal) return;
+    if (!window.confirm(`Delete deal for ${editingDeal.client_name}? This cannot be undone.`)) return;
+    setSubmitting(true);
+    try {
+      await deleteRow('deals', editingDeal.id);
+      toast.success('Deal deleted');
+      closeForm();
+      refetch();
+    } catch (err) {
+      toast.error(`Failed to delete deal: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -415,7 +441,7 @@ export default function Deals() {
         <SortableTable
           columns={columns}
           data={filtered}
-          onRowClick={(row) => setViewingDeal(row)}
+          onRowClick={(row) => handleEditDeal(row)}
         />
       )}
 
@@ -629,8 +655,8 @@ export default function Deals() {
         })()}
       </SlideOver>
 
-      {/* Add deal slide-over form */}
-      <SlideOver open={showForm} onClose={() => setShowForm(false)} title="Add New Deal">
+      {/* Add / edit deal slide-over form */}
+      <SlideOver open={showForm} onClose={closeForm} title={editingDeal ? `Edit Deal — ${editingDeal.client_name}` : 'Add New Deal'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Client Name *</label>
@@ -725,8 +751,18 @@ export default function Deals() {
             disabled={submitting}
             className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50"
           >
-            {submitting ? 'Saving...' : 'Save Deal'}
+            {submitting ? 'Saving...' : editingDeal ? 'Save Changes' : 'Save Deal'}
           </button>
+          {editingDeal && (
+            <button
+              type="button"
+              onClick={handleDeleteDeal}
+              disabled={submitting}
+              className="w-full bg-red-500/10 text-red-400 py-2.5 rounded-lg font-medium text-sm hover:bg-red-500/20 transition-colors disabled:opacity-50 border border-red-500/30"
+            >
+              Delete Deal
+            </button>
+          )}
         </form>
       </SlideOver>
     </div>
