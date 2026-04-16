@@ -9,7 +9,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import SlideOver from '../components/SlideOver';
 import { useQuery, useRealtime, updateRow, insertRow, deleteRow } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange, CLOSERS } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, addMonths, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
 export default function PaymentPlans() {
@@ -156,8 +156,7 @@ export default function PaymentPlans() {
         const amount = Number(editingReceipt.amount || 0);
         const newCollected = Number(plan.total_collected) + amount;
         const newMonthsRemaining = Math.max(0, Number(plan.months_remaining) - 1);
-        const nextDue = new Date(plan.next_due_date);
-        nextDue.setMonth(nextDue.getMonth() + 1);
+        const nextDue = addMonths(new Date(plan.next_due_date), 1);
         const today = new Date().toISOString().split('T')[0];
         let newStatus = plan.status || 'active';
         if (newMonthsRemaining === 0 || newCollected >= Number(plan.total_value)) {
@@ -328,8 +327,7 @@ export default function PaymentPlans() {
     try {
       const newCollected = Number(plan.total_collected) + Number(plan.monthly_amount);
       const newMonthsRemaining = Math.max(0, plan.months_remaining - 1);
-      const nextDue = new Date(plan.next_due_date);
-      nextDue.setMonth(nextDue.getMonth() + 1);
+      const nextDue = addMonths(new Date(plan.next_due_date), 1);
       const paidDate = dateStr || new Date().toISOString().split('T')[0];
 
       let newStatus = 'active';

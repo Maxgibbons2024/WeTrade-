@@ -1,25 +1,11 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { matchCloserByName, addMonths } from './_lib/closers.js';
 
 export const config = { api: { bodyParser: false } };
 
-// ---- Closer mapping ----
-const CLOSER_MAP = {
-  lloyd: { id: 'lloyd', name: 'Lloyd' },
-  dave: { id: 'dave', name: 'Dave' },
-  zak: { id: 'zak', name: 'Zak' },
-  joe: { id: 'joe', name: 'Joe' },
-  shea: { id: 'shea', name: 'Shea' },
-  chris: { id: 'chris', name: 'Chris' },
-};
-
-function matchCloser(name) {
-  const lower = (name || '').toLowerCase();
-  for (const [key, val] of Object.entries(CLOSER_MAP)) {
-    if (lower.includes(key)) return val;
-  }
-  return { id: 'lloyd', name: name || 'Unknown' };
-}
+// Use the shared closer map from _lib/closers.js
+const matchCloser = matchCloserByName;
 
 // ---- Supabase admin client ----
 function getSupabase() {
@@ -406,8 +392,7 @@ export default async function handler(req, res) {
         // Update the payment plan
         const newCollected = Number(plan.total_collected) + payment.amount;
         const newMonthsRemaining = Math.max(0, plan.months_remaining - 1);
-        const nextDue = new Date(plan.next_due_date);
-        nextDue.setMonth(nextDue.getMonth() + 1);
+        const nextDue = addMonths(new Date(plan.next_due_date), 1);
         const today = new Date().toISOString().split('T')[0];
 
         let newStatus = 'active';

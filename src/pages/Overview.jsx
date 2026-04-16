@@ -108,7 +108,8 @@ export default function Overview() {
     // Deal count uses newDeals (£999+) to exclude event tickets,
     // but avg deal size uses total FE so all collected cash is attributed
     const dealsCount = newDeals.length;
-    const avgDealSize = dealsCount > 0 ? frontEndCollected / dealsCount : 0;
+    const newDealsRevenue = newDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+    const avgDealSize = dealsCount > 0 ? newDealsRevenue / dealsCount : 0;
     const dealsPerDay = dealsCount / completedDays;
     const projectedNewDeals = dealsPerDay * daysRemaining;
     const cashProjectionAdditional = projectedNewDeals * avgDealSize + ppExpected;

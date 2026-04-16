@@ -1,31 +1,12 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
 import { iclosedListAll, iclosedFetch, normaliseCall, pick } from '../_lib/iclosed.js';
+import { NAME_TO_INTERNAL, resolveInternal } from '../_lib/closers.js';
 
 // Closes that count toward setter attribution
 const CLOSED_DEAL_STATUSES = ['active', 'onboarding'];
 
 // Auto-bootstrap: how far back to backfill the very first time the table is empty
 const BOOTSTRAP_SINCE = '2025-01-01';
-
-// Maps iClosed display names → our internal closer/setter ids.
-// Used for auto-seeding the iclosed_users table on first run.
-const NAME_TO_INTERNAL = [
-  { match: /lloyd/i,             internal_id: 'lloyd', role: 'closer' },
-  { match: /dave|david/i,        internal_id: 'dave',  role: 'closer' },
-  { match: /zak|zach/i,          internal_id: 'zak',   role: 'closer' },
-  { match: /joe|joseph/i,        internal_id: 'joe',   role: 'closer' },
-  { match: /shea/i,              internal_id: 'shea',  role: 'closer' },
-  { match: /chris|christopher/i, internal_id: 'chris', role: 'closer' },
-  { match: /kai/i,               internal_id: 'kai',   role: 'setter' },
-];
-
-function resolveInternal(displayName) {
-  if (!displayName) return null;
-  for (const rule of NAME_TO_INTERNAL) {
-    if (rule.match.test(displayName)) return rule;
-  }
-  return null;
-}
 
 // Auto-seed iclosed_users by calling iClosed's user list and matching names.
 // Runs on first sync (when the mapping table is empty) so no manual setup is needed.

@@ -287,7 +287,7 @@ export default function Closers() {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Active Plans</p>
-                      <p className="text-sm font-semibold">{stat.closerPlans.filter((p) => p.status !== 'completed').length}</p>
+                      <p className="text-sm font-semibold">{stat.closerPlans.filter((p) => p.status !== 'completed' && p.status !== 'cancelled').length}</p>
                     </div>
                   </div>
 

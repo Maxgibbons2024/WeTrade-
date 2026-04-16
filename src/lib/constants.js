@@ -113,6 +113,19 @@ export function isCommunityOnly(deal) {
   return !!deal.mentor_name && Number(deal.front_end || 0) === 0 && Number(deal.monthly_amount || 0) === 0;
 }
 
+// Safe month arithmetic — clamps to last day of target month.
+// Avoids Jan 31 + 1 month = Mar 3 bug with native setMonth.
+export function addMonths(date, n) {
+  const d = new Date(date);
+  const targetMonth = d.getMonth() + n;
+  const dayOfMonth = d.getDate();
+  d.setDate(1);
+  d.setMonth(targetMonth);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(dayOfMonth, lastDay));
+  return d;
+}
+
 export function calcDelta(current, previous) {
   if (!previous || previous === 0) return null;
   const pct = Math.round(((current - previous) / previous) * 100);
