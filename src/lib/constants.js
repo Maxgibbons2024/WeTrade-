@@ -1,15 +1,17 @@
 export const CLOSERS = [
-  { id: 'lloyd', name: 'Lloyd', initials: 'LL', color: '#27CCE7' },
-  { id: 'dave', name: 'Dave', initials: 'DV', color: '#F59E0B' },
-  { id: 'zak', name: 'Zak', initials: 'ZK', color: '#10B981' },
-  { id: 'joe', name: 'Joe', initials: 'JO', color: '#8B5CF6' },
-  { id: 'shea', name: 'Shea', initials: 'SH', color: '#EC4899' },
-  { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316' },
+  { id: 'lloyd', name: 'Lloyd', initials: 'LL', color: '#27CCE7', active: true },
+  { id: 'dave', name: 'Dave', initials: 'DV', color: '#F59E0B', active: true },
+  { id: 'zak', name: 'Zak', initials: 'ZK', color: '#10B981', active: true },
+  { id: 'joe', name: 'Joe', initials: 'JO', color: '#8B5CF6', active: false },
+  { id: 'shea', name: 'Shea', initials: 'SH', color: '#EC4899', active: false },
+  { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316', active: false },
+  { id: 'community', name: 'Community', initials: 'CO', color: '#6B7280', active: false },
 ];
+export const ACTIVE_CLOSERS = CLOSERS.filter((c) => c.active);
 
-export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite'];
+export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite', 'Mastermind'];
 
-export const DEAL_STATUSES = ['onboarding', 'active', 'follow_up', 'lost'];
+export const DEAL_STATUSES = ['onboarding', 'active', 'follow_up', 'lost', 'cancelled'];
 
 export const PAYMENT_METHODS = ['stripe', 'paypal', 'bank_transfer', 'mamo'];
 
@@ -46,6 +48,7 @@ export const STATUS_COLOURS = {
   onboarding: '#27CCE7',
   follow_up: '#F59E0B',
   lost: '#EF4444',
+  cancelled: '#EF4444',
 };
 
 export function formatCurrency(value) {
@@ -108,6 +111,19 @@ export function formatDuration(startDate, endDate) {
 
 export function isCommunityOnly(deal) {
   return !!deal.mentor_name && Number(deal.front_end || 0) === 0 && Number(deal.monthly_amount || 0) === 0;
+}
+
+// Safe month arithmetic — clamps to last day of target month.
+// Avoids Jan 31 + 1 month = Mar 3 bug with native setMonth.
+export function addMonths(date, n) {
+  const d = new Date(date);
+  const targetMonth = d.getMonth() + n;
+  const dayOfMonth = d.getDate();
+  d.setDate(1);
+  d.setMonth(targetMonth);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(dayOfMonth, lastDay));
+  return d;
 }
 
 export function calcDelta(current, previous) {

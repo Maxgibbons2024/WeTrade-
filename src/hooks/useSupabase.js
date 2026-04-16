@@ -66,3 +66,8 @@ export async function updateRow(table, id, data) {
   if (error) throw error;
   return result;
 }
+
+export async function deleteRow(table, id) {
+  const { error } = await supabase.from(table).delete().eq('id', id);
+  if (error) throw error;
+}

@@ -1,25 +1,11 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { matchCloserByName, addMonths } from './_lib/closers.js';
 
 export const config = { api: { bodyParser: false } };
 
-// ---- Closer mapping ----
-const CLOSER_MAP = {
-  lloyd: { id: 'lloyd', name: 'Lloyd' },
-  dave: { id: 'dave', name: 'Dave' },
-  zak: { id: 'zak', name: 'Zak' },
-  joe: { id: 'joe', name: 'Joe' },
-  shea: { id: 'shea', name: 'Shea' },
-  chris: { id: 'chris', name: 'Chris' },
-};
-
-function matchCloser(name) {
-  const lower = (name || '').toLowerCase();
-  for (const [key, val] of Object.entries(CLOSER_MAP)) {
-    if (lower.includes(key)) return val;
-  }
-  return { id: 'lloyd', name: name || 'Unknown' };
-}
+// Use the shared closer map from _lib/closers.js
+const matchCloser = matchCloserByName;
 
 // ---- Supabase admin client ----
 function getSupabase() {
@@ -218,16 +204,77 @@ function parseEod(text) {
 }
 
 // ---- Payment notification parsing ----
-// Format: "True £5000.00 Julian Boden" or "False £500.00 John Smith"
+// Supports several message shapes seen in the #payments Slack channel.
+// Returns { success, amount, client_name } or null if nothing matched.
+//
+// Every exit returns null via `dropped(reason)` so parser drops show up in
+// Vercel logs — silent drops have bitten us before (e.g. the £500 "car"
+// message was stored with client_name "car", and the "succeeded" / human
+// bank-transfer messages were dropped entirely).
 function parsePaymentNotification(text) {
   if (!text) return null;
-  const match = text.match(/^(True|False)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+(.+)$/i);
-  if (!match) return null;
-  return {
-    success: match[1].toLowerCase() === 'true',
-    amount: parseFloat(match[2].replace(/,/g, '')),
-    client_name: match[3].trim(),
+  const trimmed = text.trim();
+
+  const dropped = (reason) => {
+    console.warn(`[slack/events] parsePaymentNotification dropped (${reason}):`, trimmed.slice(0, 200));
+    return null;
   };
+
+  // 1. Classic Zapier format: "True £5000.00 Julian Boden" / "False £500.00 John Smith"
+  const zapier = trimmed.match(/^(True|False)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+(.+)$/i);
+  if (zapier) {
+    return {
+      success: zapier[1].toLowerCase() === 'true',
+      amount: parseFloat(zapier[2].replace(/,/g, '')),
+      client_name: zapier[3].trim(),
+    };
+  }
+
+  // 2. Stripe "succeeded" format: "succeeded <identifier> <amount>"
+  //    Identifier may be an email, a name, or something like "Mr R Monteiro Matarazzo".
+  //    Amount is the last whitespace-separated token, optionally £-prefixed.
+  const succeeded = trimmed.match(/^succeeded\s+(.+?)\s+£?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s*$/i);
+  if (succeeded) {
+    return {
+      success: true,
+      amount: parseFloat(succeeded[2].replace(/,/g, '')),
+      client_name: succeeded[1].trim(),
+    };
+  }
+
+  // 3. Stripe failure lines: "<error text>requires_payment_method <name> <email> £X"
+  //    We record these as failed attempts rather than dropping them — useful for
+  //    chasing declined cards. Example: "Your card has insufficient funds.requires_payment_method David Paines davidpaines71@gmail.com £1000"
+  const failed = trimmed.match(/requires_payment_method\s+(.+?)\s+\S+@\S+\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)/i);
+  if (failed) {
+    return {
+      success: false,
+      amount: parseFloat(failed[2].replace(/,/g, '')),
+      client_name: failed[1].trim(),
+    };
+  }
+
+  // 4. Hand-typed bank transfer, amount first: "£1,000 bank transfer Arasartnam Puvanenthiran"
+  const bankFirst = trimmed.match(/^£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+bank\s*transfer\s+(.+)$/i);
+  if (bankFirst) {
+    return {
+      success: true,
+      amount: parseFloat(bankFirst[1].replace(/,/g, '')),
+      client_name: bankFirst[2].trim(),
+    };
+  }
+
+  // 5. Hand-typed bank transfer, name first: "Alan OConnor £1,000 Bank transfer"
+  const bankLast = trimmed.match(/^(.+?)\s+£\s*(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)\s+bank\s*transfer\s*$/i);
+  if (bankLast) {
+    return {
+      success: true,
+      amount: parseFloat(bankLast[2].replace(/,/g, '')),
+      client_name: bankLast[1].trim(),
+    };
+  }
+
+  return dropped('no pattern matched');
 }
 
 // ---- Session booking parsing (Calendly via Zapier) ----
@@ -333,7 +380,11 @@ export default async function handler(req, res) {
       let paymentPlanId = null;
       let matched = false;
 
-      if (matchedPlans && matchedPlans.length === 1) {
+      // Only bump a plan's total_collected on a SUCCESSFUL payment. Failed
+      // attempts (declined cards, insufficient funds, etc.) are still
+      // recorded as receipts so the merge UI can show them, but they must
+      // not affect the plan's cash totals.
+      if (payment.success && matchedPlans && matchedPlans.length === 1) {
         const plan = matchedPlans[0];
         paymentPlanId = plan.id;
         matched = true;
@@ -341,8 +392,7 @@ export default async function handler(req, res) {
         // Update the payment plan
         const newCollected = Number(plan.total_collected) + payment.amount;
         const newMonthsRemaining = Math.max(0, plan.months_remaining - 1);
-        const nextDue = new Date(plan.next_due_date);
-        nextDue.setMonth(nextDue.getMonth() + 1);
+        const nextDue = addMonths(new Date(plan.next_due_date), 1);
         const today = new Date().toISOString().split('T')[0];
 
         let newStatus = 'active';

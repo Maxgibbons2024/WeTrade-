@@ -1,25 +1,6 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
 import { iclosedListAll, pick } from '../_lib/iclosed.js';
-
-// Maps iClosed display names → our internal closer/setter ids.
-// Edit this list once if names differ from what iClosed returns.
-const NAME_TO_INTERNAL = [
-  { match: /lloyd/i,            internal_id: 'lloyd', role: 'closer' },
-  { match: /dave|david/i,       internal_id: 'dave',  role: 'closer' },
-  { match: /zak|zach/i,         internal_id: 'zak',   role: 'closer' },
-  { match: /joe|joseph/i,       internal_id: 'joe',   role: 'closer' },
-  { match: /shea/i,             internal_id: 'shea',  role: 'closer' },
-  { match: /chris|christopher/i,internal_id: 'chris', role: 'closer' },
-  { match: /kai/i,              internal_id: 'kai',   role: 'setter' },
-];
-
-function resolveInternal(displayName) {
-  if (!displayName) return null;
-  for (const rule of NAME_TO_INTERNAL) {
-    if (rule.match.test(displayName)) return rule;
-  }
-  return null;
-}
+import { resolveInternal } from '../_lib/closers.js';
 
 export default async function handler(req, res) {
   // Auth: cron secret OR allow direct call when CRON_SECRET unset
@@ -72,7 +53,7 @@ export default async function handler(req, res) {
       mappings: rows,
       skipped,
       hint: skipped.length
-        ? 'Edit NAME_TO_INTERNAL in api/iclosed/seed-users.js if any expected user is missing.'
+        ? 'Edit NAME_TO_INTERNAL in api/_lib/closers.js if any expected user is missing.'
         : undefined,
     });
   } catch (err) {

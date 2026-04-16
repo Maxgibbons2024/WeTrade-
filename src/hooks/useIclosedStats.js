@@ -112,24 +112,57 @@ export default function useIclosedStats(dateRange) {
     return result;
   }, [calls]);
 
-  // Upcoming calls from "now" through end of today (local) — bypasses the
-  // past-only filter used by calls/byCloser/daily. Sorted chronologically,
-  // excludes cancelled.
-  const upcomingToday = useMemo(() => {
+  // All calls scheduled for today (past and upcoming), excludes cancelled.
+  const todayCalls = useMemo(() => {
     const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
-    const nowMs = now.getTime();
+    const startMs = startOfDay.getTime();
     const endMs = endOfDay.getTime();
     return (allCalls || [])
       .filter((c) => {
         if (isCancelled(c)) return false;
         if (!c.scheduled_at) return false;
         const t = new Date(c.scheduled_at).getTime();
-        return t >= nowMs && t <= endMs;
+        return t >= startMs && t <= endMs;
       })
       .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
   }, [allCalls]);
 
-  return { calls, byCloser, daily, upcomingToday, loading, error, refetch };
+  // All future booked calls from now through end of month — for target projections
+  const upcomingThisMonth = useMemo(() => {
+    const now = new Date();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const nowMs = now.getTime();
+    const endMs = monthEnd.getTime();
+    return (allCalls || [])
+      .filter((c) => {
+        if (isCancelled(c)) return false;
+        if (!c.scheduled_at) return false;
+        const t = new Date(c.scheduled_at).getTime();
+        return t > nowMs && t <= endMs;
+      })
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+  }, [allCalls]);
+
+  // Average calls booked per day over the last 7 days — used for projections
+  const recentCallsPerDay = useMemo(() => {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+    const nowMs = now.getTime();
+    const startMs = sevenDaysAgo.getTime();
+    const last7 = (allCalls || []).filter((c) => {
+      if (isCancelled(c)) return false;
+      if (!c.scheduled_at) return false;
+      const t = new Date(c.scheduled_at).getTime();
+      return t >= startMs && t <= nowMs;
+    });
+    return last7.length / 7;
+  }, [allCalls]);
+
+  return { calls, byCloser, daily, todayCalls, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
 }
