@@ -5,6 +5,7 @@ export const CLOSERS = [
   { id: 'joe', name: 'Joe', initials: 'JO', color: '#8B5CF6' },
   { id: 'shea', name: 'Shea', initials: 'SH', color: '#EC4899' },
   { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316' },
+  { id: 'community', name: 'Community', initials: 'CO', color: '#6B7280' },
 ];
 
 export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite', 'Mastermind'];
