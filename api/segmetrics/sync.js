@@ -65,6 +65,27 @@ export default async function handler(req, res) {
 
     const data = await resp.json();
 
+    // Debug mode: dump raw response structure so we can see actual field names
+    if (req.query?.debug === '1') {
+      const tableRows = data?.table?.rows || [];
+      const tableFields = data?.table?.fields || [];
+      return res.status(200).json({
+        topLevelKeys: Object.keys(data || {}),
+        kpis: data?.kpis || [],
+        tableFieldCount: tableFields.length,
+        tableFields,
+        tableRowCount: tableRows.length,
+        sampleRows: tableRows.slice(0, 3),
+        graphKeys: Object.keys(data?.graph || {}),
+        graphLabels: (data?.graph?.labels || []).slice(0, 5),
+        graphDatasets: (data?.graph?.datasets || []).map((ds) => ({
+          label: ds.label,
+          key: ds.key,
+          sampleData: (ds.data || []).slice(0, 3),
+        })),
+      });
+    }
+
     // Extract table rows — these contain per-campaign/ad/adset data
     const tableRows = data?.table?.rows || [];
     const graphData = data?.graph || {};
