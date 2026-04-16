@@ -50,6 +50,8 @@ export default function Overview() {
   const salesDeals = useMemo(() => deals.filter((d) => !isCommunityOnly(d)), [deals]);
   const rangeDeals = useMemo(() => salesDeals.filter((d) => isInDateRange(d.created_at, dateRange.start, dateRange.end)), [salesDeals, dateRange]);
   const frontEndCollected = useMemo(() => rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0), [rangeDeals]);
+  // Deals £999+ count as "new deals" for projections — anything under is event tickets
+  const newDeals = useMemo(() => rangeDeals.filter((d) => Number(d.front_end || 0) >= 999), [rangeDeals]);
 
   // Cash collected = front end from deals + successful payment receipts in range
   //                + manual payments (bank transfers, PayPal, Mamo) in range.
@@ -99,8 +101,10 @@ export default function Overview() {
     const showRate = aggScheduled > 0 ? aggLive / aggScheduled : 0;
 
     // --- Method 1: Cash-Based Projection ---
-    const dealsCount = rangeDeals.length;
-    const avgDealSize = dealsCount > 0 ? frontEndCollected / dealsCount : 0;
+    // Use newDeals (£999+) for deal count / avg — sub-£999 are event tickets
+    const dealsCount = newDeals.length;
+    const newDealsFE = newDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+    const avgDealSize = dealsCount > 0 ? newDealsFE / dealsCount : 0;
     const dealsPerDay = daysPassed > 0 ? dealsCount / daysPassed : 0;
     const projectedNewDeals = dealsPerDay * daysRemaining;
     const cashProjectionAdditional = projectedNewDeals * avgDealSize + ppExpected;
@@ -159,7 +163,7 @@ export default function Overview() {
       requiredBookingsPerDay, currentBookingsPerDay, paceRatio,
       callsNeededBooked: Math.round(callsNeededBooked),
     };
-  }, [totalCashCollected, frontEndCollected, monthlyTarget, paymentPlans, iclosedByCloser, rangeDeals]);
+  }, [totalCashCollected, monthlyTarget, paymentPlans, iclosedByCloser, newDeals]);
 
   // iClosed call stats (aggregated across all closers in the date range)
   const callStats = useMemo(() => {

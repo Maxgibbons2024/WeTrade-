@@ -46,8 +46,11 @@ export default function Calculator() {
     }
 
     const showRate = aggScheduled > 0 ? aggLive / aggScheduled : 0;
-    const dealsCount = rangeDeals.length;
-    const avgDealSize = dealsCount > 0 ? frontEnd / dealsCount : 0;
+    // Only count deals £999+ as "new deals" — sub-£999 are event tickets
+    const newDeals = rangeDeals.filter((d) => Number(d.front_end || 0) >= 999);
+    const dealsCount = newDeals.length;
+    const newDealsFE = newDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
+    const avgDealSize = dealsCount > 0 ? newDealsFE / dealsCount : 0;
     const callsTaken = aggLive;
     const revenuePerCall = callsTaken > 0 ? totalCash / callsTaken : 0;
     const callsBookedPerDay = daysPassed > 0 ? aggScheduled / daysPassed : 0;
