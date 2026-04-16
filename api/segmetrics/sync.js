@@ -46,138 +46,122 @@ export default async function handler(req, res) {
       until = new Date().toISOString().split('T')[0];
     }
 
-    // Fetch ads report from SegMetrics
-    const url = `${SEGMETRICS_BASE}/${accountId}/report/ads?start=${since}&end=${until}&scale=day`;
-    const resp = await fetch(url, {
-      headers: {
-        Authorization: apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      return res.status(502).json({
-        error: `SegMetrics API error: ${resp.status}`,
-        detail: errText,
+    // Helper to fetch one day's campaign data from SegMetrics
+    async function fetchDay(dateStr) {
+      const url = `${SEGMETRICS_BASE}/${accountId}/report/ads?start=${dateStr}&end=${dateStr}&scale=day`;
+      const resp = await fetch(url, {
+        headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
       });
+      if (!resp.ok) {
+        console.error(`[segmetrics/sync] API error for ${dateStr}: ${resp.status}`);
+        return [];
+      }
+      const data = await resp.json();
+      return { rows: data?.table?.rows || [], kpis: data?.kpis || [] };
     }
 
-    const data = await resp.json();
-
-    // Debug mode: dump raw response structure so we can see actual field names
+    // Debug mode: dump raw response for a single day
     if (req.query?.debug === '1') {
+      const debugDate = req.query?.date || until;
+      const url = `${SEGMETRICS_BASE}/${accountId}/report/ads?start=${debugDate}&end=${debugDate}&scale=day`;
+      const resp = await fetch(url, {
+        headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+      });
+      const data = await resp.json();
       const tableRows = data?.table?.rows || [];
       const tableFields = data?.table?.fields || [];
       return res.status(200).json({
+        date: debugDate,
         topLevelKeys: Object.keys(data || {}),
         kpis: data?.kpis || [],
-        tableFieldCount: tableFields.length,
         tableFields,
         tableRowCount: tableRows.length,
-        sampleRows: tableRows.slice(0, 3),
-        graphKeys: Object.keys(data?.graph || {}),
+        sampleRows: tableRows.slice(0, 5),
         graphLabels: (data?.graph?.labels || []).slice(0, 5),
-        graphDatasets: (data?.graph?.datasets || []).map((ds) => ({
-          label: ds.label,
-          key: ds.key,
-          sampleData: (ds.data || []).slice(0, 3),
-        })),
       });
     }
 
-    // Extract table rows — these contain per-campaign/ad/adset data
-    const tableRows = data?.table?.rows || [];
-    const graphData = data?.graph || {};
-    const kpis = data?.kpis || [];
+    // Fetch day-by-day to get per-campaign per-day data.
+    // SegMetrics table rows are campaign-level aggregates for the date range,
+    // so fetching one day at a time gives us daily granularity.
+    const allRows = [];
+    const cursor = new Date(since);
+    const end = new Date(until);
+    let daysProcessed = 0;
+    let apiErrors = 0;
 
-    if (tableRows.length === 0) {
-      return res.status(200).json({
-        ok: true,
-        message: 'No ad data returned by SegMetrics',
-        since,
-        until,
-        kpiCount: kpis.length,
-        count: 0,
-      });
-    }
+    while (cursor <= end) {
+      const dateStr = cursor.toISOString().split('T')[0];
+      const result = await fetchDay(dateStr);
 
-    // Map SegMetrics rows to our schema.
-    // The exact field names depend on SegMetrics' response format. We try
-    // common field names and fall back gracefully. The `raw` column stores
-    // the original row so we can inspect and adjust mapping later.
-    const rows = [];
-    for (const row of tableRows) {
-      // SegMetrics may return rows keyed by field name or by index.
-      // We normalise both patterns.
-      const get = (keys) => {
-        for (const k of keys) {
-          if (row[k] !== undefined && row[k] !== null && row[k] !== '') return row[k];
+      if (Array.isArray(result)) {
+        // fetchDay returned [] on error
+        apiErrors++;
+      } else {
+        for (const row of result.rows) {
+          const campaignName = row.ad_campaign || '';
+          if (!campaignName) continue;
+
+          // SegMetrics field names (from debug output):
+          // ad_campaign, leads, numOfCustomers, revenue, adClicks, adSpend,
+          // ad_cpc, adCpa, adCac, adRoi
+          const spend = Number(row.adSpend || 0);
+          const clicks = Number(row.adClicks || 0);
+          const leads = Number(row.leads || 0);
+          const revenue = Number(row.revenue || 0);
+          const customers = Number(row.numOfCustomers || 0);
+
+          // Skip zero-activity rows
+          if (spend === 0 && clicks === 0 && leads === 0) continue;
+
+          const cpc = clicks > 0 ? spend / clicks : 0;
+          const cpl = leads > 0 ? spend / leads : 0;
+          const roas = spend > 0 ? revenue / spend : 0;
+
+          // Use campaign name as ID (SegMetrics doesn't give a numeric campaign_id in this endpoint)
+          const campaignId = campaignName.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 200);
+
+          allRows.push({
+            date: dateStr,
+            campaign_id: campaignId,
+            campaign_name: campaignName,
+            ad_set_id: '',
+            ad_set_name: '',
+            ad_id: `${campaignId}_${dateStr}`,
+            ad_name: '',
+            spend: Math.round(spend * 100) / 100,
+            clicks,
+            impressions: 0, // Not available in SegMetrics table response
+            leads,
+            revenue: Math.round(revenue * 100) / 100,
+            cpc: Math.round(cpc * 100) / 100,
+            cpl: Math.round(cpl * 100) / 100,
+            roas: Math.round(roas * 100) / 100,
+            raw: { ...row, customers, adCpa: row.adCpa, adCac: row.adCac },
+            synced_at: new Date().toISOString(),
+          });
         }
-        return null;
-      };
+      }
 
-      const campaignId = get(['campaign_id', 'adcampaign_id', 'adcampaign', 'campaign']);
-      const campaignName = get(['campaign_name', 'adcampaign_name', 'campaign']);
-      const adSetId = get(['adset_id', 'ad_set_id']);
-      const adSetName = get(['adset_name', 'ad_set_name']);
-      const adId = get(['ad_id', 'ad']);
-      const adName = get(['ad_name']);
-      const date = get(['date', 'date_created']);
-      const spend = Number(get(['spend', 'cost', 'amount_spent']) || 0);
-      const clicks = Number(get(['clicks', 'link_clicks']) || 0);
-      const impressions = Number(get(['impressions']) || 0);
-      const leads = Number(get(['leads', 'opt_ins', 'optins', 'contacts']) || 0);
-      const revenue = Number(get(['revenue', 'value', 'conversion_value']) || 0);
-
-      // SegMetrics reports spend in cents — convert to pounds
-      const spendPounds = spend > 100 ? spend / 100 : spend;
-      const revenuePounds = revenue > 100 ? revenue / 100 : revenue;
-
-      const cpc = clicks > 0 ? spendPounds / clicks : 0;
-      const cpl = leads > 0 ? spendPounds / leads : 0;
-      const roas = spendPounds > 0 ? revenuePounds / spendPounds : 0;
-
-      // Use a composite key if no ad_id: campaign + adset + date
-      const effectiveAdId = adId || `${campaignId || 'unknown'}_${adSetId || 'none'}_${date || 'nodate'}`;
-
-      if (!date) continue; // Skip rows without a date
-
-      rows.push({
-        date,
-        campaign_id: String(campaignId || ''),
-        campaign_name: campaignName || '',
-        ad_set_id: String(adSetId || ''),
-        ad_set_name: adSetName || '',
-        ad_id: String(effectiveAdId),
-        ad_name: adName || '',
-        spend: Math.round(spendPounds * 100) / 100,
-        clicks,
-        impressions,
-        leads,
-        revenue: Math.round(revenuePounds * 100) / 100,
-        cpc: Math.round(cpc * 100) / 100,
-        cpl: Math.round(cpl * 100) / 100,
-        roas: Math.round(roas * 100) / 100,
-        raw: row,
-        synced_at: new Date().toISOString(),
-      });
+      daysProcessed++;
+      cursor.setDate(cursor.getDate() + 1);
     }
 
-    if (rows.length === 0) {
+    if (allRows.length === 0) {
       return res.status(200).json({
         ok: true,
-        message: 'No parseable ad rows from SegMetrics',
+        message: 'No ad activity found in date range',
         since,
         until,
-        rawRowCount: tableRows.length,
+        daysProcessed,
+        apiErrors,
         count: 0,
       });
     }
 
-    // Dedupe by (ad_id, date) before upserting
+    // Dedupe by (ad_id, date)
     const seen = new Map();
-    for (const r of rows) {
+    for (const r of allRows) {
       const key = `${r.ad_id}::${r.date}`;
       seen.set(key, r);
     }
@@ -203,11 +187,11 @@ export default async function handler(req, res) {
       ok: true,
       since,
       until,
-      fetched: tableRows.length,
-      parsed: rows.length,
+      daysProcessed,
+      apiErrors,
+      fetched: allRows.length,
       deduped: dedupedRows.length,
       upserted,
-      kpis: kpis.map((k) => ({ name: k.name, value: k.value })),
       errors: errors.length ? errors : undefined,
     });
   } catch (err) {
@@ -216,4 +200,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const config = { runtime: 'nodejs' };
+export const config = { runtime: 'nodejs', maxDuration: 300 };
