@@ -1,6 +1,9 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
 import { matchCloserByNameAndEmail } from '../_lib/closers.js';
 
+// Correct Fathom API base URL
+const FATHOM_BASE = 'https://api.fathom.ai/external/v1';
+
 // How far back to backfill on the very first run (when fathom_calls is empty)
 const BACKFILL_DAYS = 30;
 
@@ -52,74 +55,80 @@ export default async function handler(req, res) {
       until = new Date().toISOString().split('T')[0];
     }
 
-    // Fetch calls from Fathom API — iterate day-by-day to avoid hitting
-    // any single-request limits and to give better progress visibility.
+    // Fetch meetings from Fathom API using cursor-based pagination.
+    // Fathom uses created_after/created_before for date filtering.
     const allRows = [];
-    const cursor = new Date(since);
-    const end = new Date(until);
+    let pageCursor = null;
+    let pageCount = 0;
 
-    while (cursor <= end) {
-      const dateStr = cursor.toISOString().split('T')[0];
+    do {
+      const params = new URLSearchParams({
+        created_after: `${since}T00:00:00Z`,
+        created_before: `${until}T23:59:59Z`,
+      });
+      if (pageCursor) params.set('cursor', pageCursor);
 
-      const fathomResp = await fetch(
-        `https://api.fathom.video/v1/calls?from=${dateStr}T00:00:00Z&to=${dateStr}T23:59:59Z`,
-        {
-          headers: {
-            Authorization: `Bearer ${fathomApiKey}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const url = `${FATHOM_BASE}/meetings?${params}`;
+      const fathomResp = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${fathomApiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       if (!fathomResp.ok) {
         const errText = await fathomResp.text();
-        console.error(`[fathom/sync] API error for ${dateStr}: ${fathomResp.status} ${errText}`);
-        // Continue to next day rather than aborting entire sync
-        cursor.setDate(cursor.getDate() + 1);
-        continue;
+        return res.status(502).json({
+          error: `Fathom API error: ${fathomResp.status}`,
+          detail: errText,
+        });
       }
 
       const data = await fathomResp.json();
-      const calls = data.calls || data.data || data || [];
+      const meetings = data.meetings || data.data || data || [];
 
-      if (Array.isArray(calls)) {
-        for (const call of calls) {
-          const closer = matchCloserByNameAndEmail(
-            call.user_name || call.host_name || '',
-            call.user_email || call.host_email || ''
+      if (!Array.isArray(meetings) || meetings.length === 0) break;
+
+      for (const meeting of meetings) {
+        // Resolve closer from the recorder's name/email
+        const recorderName = meeting.recorded_by?.name || '';
+        const recorderEmail = meeting.recorded_by?.email || '';
+        const closer = matchCloserByNameAndEmail(recorderName, recorderEmail);
+
+        // Calculate duration from recording timestamps (Fathom has no duration field)
+        let duration = 0;
+        if (meeting.recording_start_time && meeting.recording_end_time) {
+          duration = Math.round(
+            (new Date(meeting.recording_end_time) - new Date(meeting.recording_start_time)) / 1000
           );
-
-          const duration = call.duration_seconds || call.duration || 0;
-          const isNoShow = duration < 60 || call.no_show === true;
-
-          let outcome = null;
-          if (call.outcome) {
-            outcome = call.outcome;
-          } else if (isNoShow) {
-            outcome = 'no_show';
-          }
-
-          allRows.push({
-            call_date: dateStr,
-            closer_id: closer.id,
-            closer_name: closer.name,
-            fathom_call_id: call.id || call.call_id || `fathom_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-            duration_seconds: duration,
-            talk_time_seconds: call.talk_time_seconds || call.talk_time || 0,
-            outcome,
-            no_show: isNoShow,
-            transcript_url: call.transcript_url || call.recording_url || null,
-          });
         }
+
+        const isNoShow = duration < 60;
+        const callDate = (meeting.created_at || meeting.recording_start_time || '').split('T')[0];
+
+        allRows.push({
+          call_date: callDate || since,
+          closer_id: closer.id,
+          closer_name: closer.name,
+          fathom_call_id: String(meeting.recording_id || meeting.id || `fathom_${Date.now()}_${Math.random().toString(36).slice(2)}`),
+          duration_seconds: duration,
+          talk_time_seconds: 0, // Fathom API doesn't provide talk_time directly
+          outcome: isNoShow ? 'no_show' : null,
+          no_show: isNoShow,
+          transcript_url: meeting.url || meeting.share_url || null,
+        });
       }
 
-      cursor.setDate(cursor.getDate() + 1);
-    }
+      // Cursor-based pagination
+      pageCursor = data.cursor || data.next_cursor || null;
+      pageCount++;
+      if (pageCount > 100) break; // safety limit
+    } while (pageCursor);
 
     if (allRows.length === 0) {
       return res.status(200).json({
         ok: true,
-        message: 'No calls returned by Fathom',
+        message: 'No meetings returned by Fathom',
         since,
         until,
         count: 0,
@@ -128,7 +137,6 @@ export default async function handler(req, res) {
 
     // Deduplicate: check which fathom_call_ids already exist
     const fathomIds = allRows.map((r) => r.fathom_call_id);
-    // Batch the IN query to avoid hitting URL length limits
     const existingIds = new Set();
     for (let i = 0; i < fathomIds.length; i += 500) {
       const batch = fathomIds.slice(i, i + 500);
@@ -146,7 +154,7 @@ export default async function handler(req, res) {
     if (newRows.length === 0) {
       return res.status(200).json({
         ok: true,
-        message: 'All calls already synced',
+        message: 'All meetings already synced',
         since,
         until,
         fetched: allRows.length,
@@ -170,7 +178,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      message: `Synced ${inserted} Fathom calls`,
+      message: `Synced ${inserted} Fathom meetings`,
       since,
       until,
       fetched: allRows.length,
