@@ -57,7 +57,7 @@ export default function Deals() {
   const { data: deals, loading, error, refetch } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
   });
-  const { data: paymentPlans } = useQuery('payment_plans');
+  const { data: paymentPlans, refetch: refetchPlans } = useQuery('payment_plans');
   const { data: receipts, refetch: refetchReceipts } = useQuery('payment_receipts', { order: { column: 'received_at', ascending: false } });
   const { data: manualPayments, refetch: refetchManual } = useQuery('manual_payments', { order: { column: 'payment_date', ascending: false } });
   const { data: fathomCalls } = useQuery('fathom_calls');
@@ -373,13 +373,53 @@ export default function Deals() {
         cancelled_at: dealFields.status === 'cancelled' && cancelled_at ? new Date(cancelled_at).toISOString() : null,
       };
       if (created_at) payload.created_at = new Date(created_at).toISOString();
+      let savedDealId;
       if (editingDeal) {
         await updateRow('deals', editingDeal.id, payload);
+        savedDealId = editingDeal.id;
         toast.success('Deal updated');
       } else {
-        await insertRow('deals', payload);
+        const result = await insertRow('deals', payload);
+        const newDeal = Array.isArray(result) ? result[0] : result;
+        savedDealId = newDeal.id;
         toast.success('Deal added successfully');
       }
+
+      // Auto-create or update payment plan when monthly > 0
+      const monthly = Number(payload.monthly_amount) || 0;
+      if (monthly > 0 && savedDealId) {
+        const existingPlan = (paymentPlans || []).find((p) => p.deal_id === savedDealId);
+        if (existingPlan) {
+          // Update existing plan with new monthly/closer if changed
+          await updateRow('payment_plans', existingPlan.id, {
+            client_name: payload.client_name,
+            closer_id: payload.closer_id,
+            monthly_amount: monthly,
+          });
+        } else {
+          // Create new plan — total_value defaults to front_end + (monthly * 12)
+          // total_collected starts at front_end (they've paid the deposit)
+          const fe = Number(payload.front_end) || 0;
+          const totalValue = fe + (monthly * 12);
+          const nextDue = new Date();
+          nextDue.setMonth(nextDue.getMonth() + 1);
+          nextDue.setDate(1);
+          await insertRow('payment_plans', {
+            deal_id: savedDealId,
+            client_name: payload.client_name,
+            closer_id: payload.closer_id,
+            monthly_amount: monthly,
+            total_value: totalValue,
+            total_collected: fe,
+            months_remaining: 12,
+            next_due_date: nextDue.toISOString().split('T')[0],
+            status: 'active',
+          });
+          toast.success('Payment plan created automatically');
+        }
+        refetchPlans();
+      }
+
       closeForm();
       refetch();
     } catch (err) {
