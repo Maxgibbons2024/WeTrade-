@@ -50,13 +50,15 @@ export default function Deals() {
   const [editingDeal, setEditingDeal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [editingTx, setEditingTx] = useState(null); // transaction row being edited
+  const [txForm, setTxForm] = useState({ date: '', client_name: '', amount: '', closer_id: '', type: '' });
 
   const { data: deals, loading, error, refetch } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
   });
   const { data: paymentPlans } = useQuery('payment_plans');
-  const { data: receipts } = useQuery('payment_receipts', { order: { column: 'received_at', ascending: false } });
-  const { data: manualPayments } = useQuery('manual_payments', { order: { column: 'payment_date', ascending: false } });
+  const { data: receipts, refetch: refetchReceipts } = useQuery('payment_receipts', { order: { column: 'received_at', ascending: false } });
+  const { data: manualPayments, refetch: refetchManual } = useQuery('manual_payments', { order: { column: 'payment_date', ascending: false } });
   const { data: fathomCalls } = useQuery('fathom_calls');
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
@@ -381,6 +383,111 @@ export default function Deals() {
     }
   }
 
+  // ---- Transaction edit handlers ----
+  function openTxEdit(tx) {
+    setEditingTx(tx);
+    const ref = tx.ref;
+    if (tx.origin === 'deal') {
+      setTxForm({
+        date: ref.created_at ? ref.created_at.slice(0, 10) : '',
+        client_name: ref.client_name || '',
+        amount: ref.front_end ?? '',
+        closer_id: ref.closer_id || '',
+        type: tx.type,
+      });
+    } else if (tx.origin === 'receipt') {
+      setTxForm({
+        date: ref.received_at ? ref.received_at.slice(0, 10) : '',
+        client_name: ref.client_name || '',
+        amount: ref.amount ?? '',
+        closer_id: tx.closer_id || '',
+        type: tx.type,
+      });
+    } else {
+      // manual
+      setTxForm({
+        date: ref.payment_date ? ref.payment_date.slice(0, 10) : '',
+        client_name: ref.client_name || '',
+        amount: ref.amount ?? '',
+        closer_id: tx.closer_id || '',
+        type: tx.type,
+      });
+    }
+  }
+
+  function closeTxEdit() {
+    setEditingTx(null);
+  }
+
+  async function handleSaveTx(e) {
+    e.preventDefault();
+    if (!editingTx) return;
+    setSubmitting(true);
+    try {
+      const ref = editingTx.ref;
+      if (editingTx.origin === 'deal') {
+        const updates = {
+          client_name: txForm.client_name.trim(),
+          front_end: Number(txForm.amount) || 0,
+          closer_id: txForm.closer_id || ref.closer_id,
+        };
+        const c = CLOSERS.find((cl) => cl.id === updates.closer_id);
+        if (c) updates.closer_name = c.name;
+        if (txForm.date) updates.created_at = new Date(txForm.date).toISOString();
+        await updateRow('deals', ref.id, updates);
+        refetch();
+      } else if (editingTx.origin === 'receipt') {
+        const updates = {
+          client_name: txForm.client_name.trim(),
+          amount: Number(txForm.amount) || 0,
+        };
+        if (txForm.date) updates.received_at = new Date(txForm.date).toISOString();
+        await updateRow('payment_receipts', ref.id, updates);
+        refetchReceipts();
+      } else {
+        const updates = {
+          client_name: txForm.client_name.trim(),
+          amount: Number(txForm.amount) || 0,
+        };
+        if (txForm.date) updates.payment_date = txForm.date;
+        await updateRow('manual_payments', ref.id, updates);
+        refetchManual();
+      }
+      toast.success('Transaction updated');
+      closeTxEdit();
+    } catch (err) {
+      toast.error(`Failed: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteTx() {
+    if (!editingTx) return;
+    const label = editingTx.client || 'this transaction';
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+    setSubmitting(true);
+    try {
+      const ref = editingTx.ref;
+      if (editingTx.origin === 'deal') {
+        await deleteRow('deals', ref.id);
+        refetch();
+      } else if (editingTx.origin === 'receipt') {
+        await deleteRow('payment_receipts', ref.id);
+        refetchReceipts();
+      } else {
+        await deleteRow('manual_payments', ref.id);
+        refetchManual();
+      }
+      toast.success('Transaction deleted');
+      closeTxEdit();
+    } catch (err) {
+      toast.error(`Failed: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error} />;
 
@@ -500,9 +607,85 @@ export default function Deals() {
             columns={transactionColumns}
             data={filteredTransactions}
             defaultSort={{ column: 'date', ascending: false }}
+            onRowClick={(row) => openTxEdit(row)}
           />
         </div>
       )}
+
+      {/* Transaction edit SlideOver */}
+      <SlideOver open={!!editingTx} onClose={closeTxEdit} title={editingTx ? `Edit Transaction — ${editingTx.client}` : ''}>
+        {editingTx && (
+          <form onSubmit={handleSaveTx} className="space-y-4">
+            <div className="bg-brand-dark/60 border border-gray-800 rounded-lg p-3 flex items-center gap-2">
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
+                editingTx.type === 'new_cash' ? 'bg-green-500/10 text-green-400 border-green-500/30' :
+                editingTx.type === 'payment_plan' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                'bg-red-500/10 text-red-400 border-red-500/30'
+              }`}>
+                {editingTx.type === 'new_cash' ? 'New Cash' : editingTx.type === 'payment_plan' ? 'Payment Plan' : 'Failed'}
+              </span>
+              <span className="text-xs text-gray-500 capitalize">Source: {editingTx.origin}</span>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Date</label>
+              <input
+                type="date"
+                value={txForm.date}
+                onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
+                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Client Name</label>
+              <input
+                type="text"
+                value={txForm.client_name}
+                onChange={(e) => setTxForm({ ...txForm, client_name: e.target.value })}
+                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Amount (£)</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={txForm.amount}
+                onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+                className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+              />
+            </div>
+            {editingTx.origin === 'deal' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Closer</label>
+                <select
+                  value={txForm.closer_id}
+                  onChange={(e) => setTxForm({ ...txForm, closer_id: e.target.value })}
+                  className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+                >
+                  <option value="">—</option>
+                  {CLOSERS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50"
+            >
+              {submitting ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteTx}
+              disabled={submitting}
+              className="w-full bg-red-500/10 text-red-400 py-2.5 rounded-lg font-medium text-sm hover:bg-red-500/20 transition-colors disabled:opacity-50 border border-red-500/30"
+            >
+              Delete
+            </button>
+          </form>
+        )}
+      </SlideOver>
 
 
       {/* Client detail slide-over */}
