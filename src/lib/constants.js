@@ -7,7 +7,7 @@ export const CLOSERS = [
   { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316' },
 ];
 
-export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite'];
+export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite', 'Mastermind'];
 
 export const DEAL_STATUSES = ['onboarding', 'active', 'follow_up', 'lost', 'cancelled'];
 
