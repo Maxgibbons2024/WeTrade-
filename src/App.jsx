@@ -10,6 +10,7 @@ import PaymentPlans from './pages/PaymentPlans';
 import Fathom from './pages/Fathom';
 import Community from './pages/Community';
 import ManualEntry from './pages/ManualEntry';
+import Calculator from './pages/Calculator';
 
 const PAGES = {
   overview: Overview,
@@ -20,6 +21,7 @@ const PAGES = {
   community: Community,
   payments: PaymentPlans,
   fathom: Fathom,
+  calculator: Calculator,
   entry: ManualEntry,
 };
 

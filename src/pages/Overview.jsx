@@ -27,7 +27,7 @@ export default function Overview() {
   });
   const [editingTarget, setEditingTarget] = useState(false);
 
-  const { byCloser: iclosedByCloser, upcomingToday, upcomingThisMonth, recentCallsPerDay } = useIclosedStats(dateRange);
+  const { byCloser: iclosedByCloser, upcomingToday } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -63,23 +63,21 @@ export default function Overview() {
   }, [rangeReceipts, rangeManual]);
   const totalCashCollected = frontEndCollected + ppCollected;
 
-  // ---- Target tracking ----
+  // ---- Target tracking (dual-method projection) ----
   const targetStats = useMemo(() => {
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const totalDays = monthEnd.getDate();
     const daysPassed = now.getDate();
     const daysRemaining = totalDays - daysPassed;
 
-    // Daily run rate based on cash collected so far this month
+    // Daily run rate based on cash collected so far
     const runRate = daysPassed > 0 ? totalCashCollected / daysPassed : 0;
-    const projectedAtRunRate = runRate * totalDays;
 
     // Gap to target
     const remaining = Math.max(0, monthlyTarget - totalCashCollected);
 
-    // PP payments expected rest of month — active plans with next_due <= month end
+    // PP payments expected rest of month
     const ppExpected = (paymentPlans || [])
       .filter((p) => p.status === 'active' || p.status === 'due_soon' || p.status === 'overdue')
       .filter((p) => {
@@ -89,53 +87,79 @@ export default function Overview() {
       })
       .reduce((sum, p) => sum + Number(p.monthly_amount || 0), 0);
 
-    // Call-based projection using ACTUAL booked calls from iClosed calendar
-    // + estimated unbooked calls for remaining days without bookings
+    // Aggregate call stats across active closers
     let aggScheduled = 0;
     let aggLive = 0;
-    let aggCloses = 0;
     for (const closer of ACTIVE_CLOSERS) {
       const stats = iclosedByCloser?.[closer.id];
       if (!stats) continue;
       aggScheduled += stats.scheduled || 0;
       aggLive += stats.live || 0;
-      aggCloses += stats.closes || 0;
     }
     const showRate = aggScheduled > 0 ? aggLive / aggScheduled : 0;
-    const closeRate = aggLive > 0 ? aggCloses / aggLive : 0;
-    const avgDealSize = rangeDeals.length > 0
-      ? rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0) / rangeDeals.length
-      : 0;
-    // Actual booked calls remaining this month (from iClosed calendar)
-    const bookedCalls = (upcomingThisMonth || []).length;
-    // Estimate additional calls based on last 7 days booking rate
-    // for remaining days that don't yet have bookings
-    const bookedDays = new Set((upcomingThisMonth || []).map((c) => c.scheduled_at?.slice(0, 10))).size;
-    const unbookedDays = Math.max(0, daysRemaining - bookedDays);
-    const estimatedAdditionalCalls = (recentCallsPerDay || 0) * unbookedDays;
-    const totalRemainingCalls = bookedCalls + estimatedAdditionalCalls;
-    const projectedNewDeals = totalRemainingCalls * showRate * closeRate * avgDealSize;
 
-    // Total projected
-    const totalProjected = totalCashCollected + ppExpected + projectedNewDeals;
+    // --- Method 1: Cash-Based Projection ---
+    const dealsCount = rangeDeals.length;
+    const avgDealSize = dealsCount > 0 ? frontEndCollected / dealsCount : 0;
+    const dealsPerDay = daysPassed > 0 ? dealsCount / daysPassed : 0;
+    const projectedNewDeals = dealsPerDay * daysRemaining;
+    const cashProjectionAdditional = projectedNewDeals * avgDealSize + ppExpected;
+    const method1Total = totalCashCollected + cashProjectionAdditional;
 
-    // Required daily to hit target (from new deals only, after PP)
+    // --- Method 2: Calls-Based Projection ---
+    const callsTaken = aggLive;
+    const revenuePerCall = callsTaken > 0 ? totalCashCollected / callsTaken : 0;
+    const callsBooked = aggScheduled;
+    const avgBookedPerDay = daysPassed > 0 ? callsBooked / daysPassed : 0;
+    const projectedNewCalls = avgBookedPerDay * daysRemaining;
+    const projectedCallsTaken = projectedNewCalls * showRate;
+    const callsProjectionAdditional = projectedCallsTaken * revenuePerCall;
+    const method2Total = totalCashCollected + callsProjectionAdditional;
+
+    // --- Combined average ---
+    const hasMethod1 = dealsCount > 0;
+    const hasMethod2 = callsTaken > 0;
+    let combinedTotal;
+    if (hasMethod1 && hasMethod2) {
+      combinedTotal = (method1Total + method2Total) / 2;
+    } else if (hasMethod1) {
+      combinedTotal = method1Total;
+    } else if (hasMethod2) {
+      combinedTotal = method2Total;
+    } else {
+      combinedTotal = totalCashCollected + ppExpected;
+    }
+
+    // Call booking pace — how many bookings/day needed to hit target
+    const gapToTarget = Math.max(0, monthlyTarget - totalCashCollected - ppExpected);
+    const callsNeededTaken = revenuePerCall > 0 ? gapToTarget / revenuePerCall : 0;
+    const callsNeededBooked = showRate > 0 ? callsNeededTaken / showRate : 0;
+    const requiredBookingsPerDay = daysRemaining > 0 ? callsNeededBooked / daysRemaining : 0;
+    const currentBookingsPerDay = daysPassed > 0 ? callsBooked / daysPassed : 0;
+    const paceRatio = requiredBookingsPerDay > 0 ? currentBookingsPerDay / requiredBookingsPerDay : 1;
+
+    // Required daily cash to hit target (after PP)
     const gapAfterPP = Math.max(0, remaining - ppExpected);
     const requiredDaily = daysRemaining > 0 ? gapAfterPP / daysRemaining : 0;
 
     return {
       daysPassed, daysRemaining, totalDays,
-      runRate, projectedAtRunRate,
-      remaining, ppExpected, projectedNewDeals, totalProjected,
-      showRate, closeRate, avgDealSize,
-      requiredDaily, gapAfterPP,
-      bookedCalls, estimatedAdditionalCalls: Math.round(estimatedAdditionalCalls),
-      totalRemainingCalls: Math.round(totalRemainingCalls),
-      recentCallsPerDay: recentCallsPerDay || 0,
-      unbookedDays,
-      onTrack: totalProjected >= monthlyTarget,
+      runRate, remaining, ppExpected, requiredDaily, gapAfterPP,
+      // Method 1
+      dealsCount, avgDealSize, dealsPerDay, projectedNewDeals: Math.round(projectedNewDeals),
+      cashProjectionAdditional, method1Total,
+      // Method 2
+      callsTaken, revenuePerCall, callsBooked, avgBookedPerDay,
+      projectedNewCalls: Math.round(projectedNewCalls), projectedCallsTaken: Math.round(projectedCallsTaken),
+      callsProjectionAdditional, method2Total,
+      showRate,
+      // Combined
+      combinedTotal, onTrack: combinedTotal >= monthlyTarget,
+      // Pace monitor
+      requiredBookingsPerDay, currentBookingsPerDay, paceRatio,
+      callsNeededBooked: Math.round(callsNeededBooked),
     };
-  }, [totalCashCollected, monthlyTarget, paymentPlans, iclosedByCloser, rangeDeals, upcomingThisMonth, recentCallsPerDay]);
+  }, [totalCashCollected, frontEndCollected, monthlyTarget, paymentPlans, iclosedByCloser, rangeDeals]);
 
   // iClosed call stats (aggregated across all closers in the date range)
   const callStats = useMemo(() => {
@@ -472,40 +496,151 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* Projection breakdown */}
-        <div className="bg-brand-dark rounded-lg p-4">
-          <h4 className="text-xs text-gray-500 font-medium mb-3">Projection to Month End</h4>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Collected so far</span>
-              <span className="font-semibold">{formatCurrency(totalCashCollected)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">+ PP payments expected</span>
-              <span className="font-semibold text-green-400">+{formatCurrency(targetStats.ppExpected)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-400">
-                + Projected new deals
-                <span className="text-[10px] text-gray-600 ml-1">
-                  ({targetStats.bookedCalls} booked + ~{targetStats.estimatedAdditionalCalls} est. for {targetStats.unbookedDays}d @ {targetStats.recentCallsPerDay.toFixed(1)}/day × {Math.round(targetStats.showRate * 100)}% show × {Math.round(targetStats.closeRate * 100)}% close × {formatCurrency(targetStats.avgDealSize)} avg)
+        {/* Dual-method projection */}
+        <h4 className="text-xs text-gray-500 font-medium mb-3">Projection to Month End</h4>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+          {/* Method 1: Cash-Based */}
+          <div className="bg-brand-dark rounded-lg p-4">
+            <h5 className="text-xs font-semibold text-brand-cyan mb-3">Method 1: Cash-Based</h5>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Deals closed</span>
+                <span className="text-gray-300">{targetStats.dealsCount} deals</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Avg deal size</span>
+                <span className="text-gray-300">{formatCurrency(targetStats.avgDealSize)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Deals/day</span>
+                <span className="text-gray-300">{targetStats.dealsPerDay.toFixed(1)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Projected new deals</span>
+                <span className="text-gray-300">{targetStats.projectedNewDeals} ({targetStats.dealsPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">New deal revenue</span>
+                <span className="text-gray-300">{formatCurrency(targetStats.projectedNewDeals * targetStats.avgDealSize)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">+ PP expected</span>
+                <span className="text-green-400">{formatCurrency(targetStats.ppExpected)}</span>
+              </div>
+              <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between">
+                <span className="text-gray-400 font-medium">Projection</span>
+                <span className={`font-bold ${targetStats.method1Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
+                  {formatCurrency(targetStats.method1Total)}
                 </span>
-              </span>
-              <span className="font-semibold text-brand-cyan">+{formatCurrency(targetStats.projectedNewDeals)}</span>
+              </div>
             </div>
-            <div className="border-t border-gray-800 pt-2 flex justify-between text-sm">
-              <span className="text-gray-300 font-medium">Projected total</span>
-              <span className={`font-bold ${targetStats.onTrack ? 'text-green-400' : 'text-red-400'}`}>
-                {formatCurrency(targetStats.totalProjected)}
-                {targetStats.onTrack
-                  ? <span className="text-xs ml-1">on track</span>
-                  : <span className="text-xs ml-1">({formatCurrency(monthlyTarget - targetStats.totalProjected)} short)</span>
-                }
+          </div>
+
+          {/* Method 2: Calls-Based */}
+          <div className="bg-brand-dark rounded-lg p-4">
+            <h5 className="text-xs font-semibold text-purple-400 mb-3">Method 2: Calls-Based</h5>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Calls taken</span>
+                <span className="text-gray-300">{targetStats.callsTaken} calls</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Revenue per call</span>
+                <span className="text-gray-300">{formatCurrency(targetStats.revenuePerCall)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Calls booked/day</span>
+                <span className="text-gray-300">{targetStats.avgBookedPerDay.toFixed(1)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Projected new calls</span>
+                <span className="text-gray-300">{targetStats.projectedNewCalls} ({targetStats.avgBookedPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">x {Math.round(targetStats.showRate * 100)}% show rate</span>
+                <span className="text-gray-300">{targetStats.projectedCallsTaken} calls taken</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Additional revenue</span>
+                <span className="text-gray-300">{formatCurrency(targetStats.callsProjectionAdditional)}</span>
+              </div>
+              <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between">
+                <span className="text-gray-400 font-medium">Projection</span>
+                <span className={`font-bold ${targetStats.method2Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
+                  {formatCurrency(targetStats.method2Total)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Combined average */}
+        <div className="bg-brand-dark rounded-lg p-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-xs text-gray-500">Average Projection (both methods)</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">
+                {formatCurrency(totalCashCollected)} collected + {formatCurrency(targetStats.cashProjectionAdditional)} cash-based / {formatCurrency(targetStats.callsProjectionAdditional)} calls-based additional
+              </p>
+            </div>
+            <div className="text-right">
+              <span className={`text-lg font-bold ${targetStats.onTrack ? 'text-green-400' : 'text-red-400'}`}>
+                {formatCurrency(targetStats.combinedTotal)}
               </span>
+              {targetStats.onTrack
+                ? <p className="text-[10px] text-green-400">on track</p>
+                : <p className="text-[10px] text-red-400">{formatCurrency(monthlyTarget - targetStats.combinedTotal)} short</p>
+              }
             </div>
           </div>
         </div>
       </div>
+
+      {/* Call Booking Pace Monitor */}
+      {targetStats.callsTaken > 0 && (
+        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <h3 className="text-sm font-medium text-gray-400 mb-4">Call Booking Pace</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="bg-brand-dark rounded-lg p-3">
+              <p className="text-xs text-gray-500">Booking at</p>
+              <p className="text-sm font-semibold text-brand-cyan">{targetStats.currentBookingsPerDay.toFixed(1)}/day</p>
+            </div>
+            <div className="bg-brand-dark rounded-lg p-3">
+              <p className="text-xs text-gray-500">Need</p>
+              <p className={`text-sm font-semibold ${targetStats.paceRatio >= 1 ? 'text-green-400' : targetStats.paceRatio >= 0.8 ? 'text-amber-400' : 'text-red-400'}`}>
+                {targetStats.requiredBookingsPerDay.toFixed(1)}/day
+              </p>
+            </div>
+            <div className="bg-brand-dark rounded-lg p-3">
+              <p className="text-xs text-gray-500">Calls Still Needed</p>
+              <p className="text-sm font-semibold text-gray-300">{targetStats.callsNeededBooked} bookings</p>
+            </div>
+          </div>
+          {/* Pace bar */}
+          <div className="mb-3">
+            <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+              <span>Current pace vs required</span>
+              <span>{Math.round(targetStats.paceRatio * 100)}%</span>
+            </div>
+            <div className="h-3 bg-gray-800 rounded-full overflow-hidden relative">
+              {/* Required marker at 100% */}
+              <div className="absolute top-0 bottom-0 w-0.5 bg-gray-500 z-10" style={{ left: '100%' }} title="Required pace" />
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  targetStats.paceRatio >= 1 ? 'bg-green-400' : targetStats.paceRatio >= 0.8 ? 'bg-amber-400' : 'bg-red-400'
+                }`}
+                style={{ width: `${Math.min(100, targetStats.paceRatio * 100)}%` }}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            {targetStats.paceRatio >= 1
+              ? `You're booking ${targetStats.currentBookingsPerDay.toFixed(1)} calls/day — ahead of the ${targetStats.requiredBookingsPerDay.toFixed(1)}/day needed to hit target.`
+              : `You're booking ${targetStats.currentBookingsPerDay.toFixed(1)} calls/day but need ${targetStats.requiredBookingsPerDay.toFixed(1)}/day to hit target. Book ${Math.ceil(targetStats.requiredBookingsPerDay - targetStats.currentBookingsPerDay)} more per day.`
+            }
+          </p>
+        </div>
+      )}
 
       {/* Weekly revenue chart */}
       <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
