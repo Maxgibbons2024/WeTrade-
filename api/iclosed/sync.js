@@ -457,6 +457,28 @@ export default async function handler(req, res) {
     }
     mark('afterUpsert');
 
+    // Write UTM data from calls to their matched deals (if deal doesn't have UTM yet).
+    // This ensures new deals get attributed automatically from iClosed tracking.
+    let utmUpdated = 0;
+    for (const row of dedupedRows) {
+      if (!row.deal_id || !row.utm_campaign) continue;
+      // Only update deals that don't already have utm_campaign
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('id, utm_campaign')
+        .eq('id', row.deal_id)
+        .single();
+      if (deal && !deal.utm_campaign) {
+        const updates = { utm_campaign: row.utm_campaign };
+        if (row.utm_source) updates.utm_source = row.utm_source;
+        if (row.utm_medium) updates.utm_medium = row.utm_medium;
+        if (row.contact_email) updates.email = row.contact_email;
+        await supabase.from('deals').update(updates).eq('id', row.deal_id);
+        utmUpdated++;
+      }
+    }
+    mark('afterUtmSync');
+
     return res.status(200).json({
       ok: true,
       since,
@@ -465,6 +487,7 @@ export default async function handler(req, res) {
       deduped: dedupedRows.length,
       processed,
       matched,
+      utmUpdated,
       timings,
       seeded: seedResult.seeded,
       errors: errors.length ? errors : undefined,
