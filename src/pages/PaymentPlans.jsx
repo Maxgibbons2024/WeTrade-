@@ -281,6 +281,31 @@ export default function PaymentPlans() {
   const filteredOverdueTotal = useMemo(() => filteredOverdue.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredOverdue]);
   const pipelineValue = useMemo(() => filteredActive.reduce((sum, p) => sum + (Number(p.total_value) - Number(p.total_collected)), 0), [filteredActive]);
 
+  // Cancelled plans — from plan status OR linked deal status
+  const cancelledPlans = useMemo(() => {
+    return plans.filter((p) => {
+      if (p.status === 'cancelled') return true;
+      // Also include plans whose linked deal is cancelled
+      const linkedDeal = (deals || []).find((d) => d.id === p.deal_id || (d.client_name && p.client_name && d.client_name.toLowerCase() === p.client_name.toLowerCase()));
+      if (linkedDeal && linkedDeal.status === 'cancelled') return true;
+      return false;
+    });
+  }, [plans, deals]);
+
+  const cancelledStats = useMemo(() => {
+    let lostMonthly = 0;
+    let lostRemaining = 0;
+    const details = cancelledPlans.map((p) => {
+      const monthly = Number(p.monthly_amount || 0);
+      const remaining = Math.max(0, Number(p.total_value || 0) - Number(p.total_collected || 0));
+      lostMonthly += monthly;
+      lostRemaining += remaining;
+      const linkedDeal = (deals || []).find((d) => d.id === p.deal_id || (d.client_name && p.client_name && d.client_name.toLowerCase() === p.client_name.toLowerCase()));
+      return { plan: p, deal: linkedDeal, monthly, remaining };
+    });
+    return { count: cancelledPlans.length, lostMonthly, lostRemaining, details };
+  }, [cancelledPlans, deals]);
+
   const unmatchedReceipts = useMemo(() => (receipts || []).filter((r) => !r.matched), [receipts]);
 
   // Receipts in the current date range
@@ -483,7 +508,53 @@ export default function PaymentPlans() {
         {failedInRange > 0 && <MetricCard title="Failed Payments" value={failedInRange} danger subtitle="Needs attention" />}
         <MetricCard title="Pipeline Value" value={formatCurrency(pipelineValue)} subtitle="Remaining to collect" />
         <MetricCard title="Total Active Plans" value={activePlans.length} subtitle="Across all time" />
+        {cancelledStats.count > 0 && (
+          <MetricCard
+            title="Cancelled"
+            value={cancelledStats.count}
+            danger
+            subtitle={`${formatCurrency(cancelledStats.lostRemaining)} lost`}
+          />
+        )}
       </div>
+
+      {/* Cancellations / Lost Revenue */}
+      {cancelledStats.count > 0 && (
+        <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-red-400">Cancelled Plans — Lost Revenue</h3>
+            <span className="text-lg font-bold text-red-400">{formatCurrency(cancelledStats.lostRemaining)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-brand-dark rounded-lg p-3">
+              <p className="text-xs text-gray-500">Monthly Lost</p>
+              <p className="text-sm font-semibold text-red-400">{formatCurrency(cancelledStats.lostMonthly)}/mo</p>
+            </div>
+            <div className="bg-brand-dark rounded-lg p-3">
+              <p className="text-xs text-gray-500">Total Remaining Lost</p>
+              <p className="text-sm font-semibold text-red-400">{formatCurrency(cancelledStats.lostRemaining)}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {cancelledStats.details.map(({ plan, deal, monthly, remaining }) => (
+              <div key={plan.id} className="flex items-center gap-3 p-2 rounded-lg bg-white/[0.02]">
+                {plan.closer_id ? <CloserAvatar closerId={plan.closer_id} size="sm" /> : <div className="w-7 h-7 rounded-full bg-gray-800" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{plan.client_name}</p>
+                  <p className="text-xs text-gray-500">
+                    {formatCurrency(plan.total_collected)} collected of {formatCurrency(plan.total_value)}
+                    {deal ? ` · ${deal.programme || ''}` : ''}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-red-400">{formatCurrency(remaining)}</p>
+                  {monthly > 0 && <p className="text-[10px] text-gray-500">{formatCurrency(monthly)}/mo lost</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tab toggle */}
       <div className="flex gap-2">
@@ -597,6 +668,7 @@ export default function PaymentPlans() {
               <option value="due_soon">Due Soon</option>
               <option value="overdue">Overdue</option>
               <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </div>
           <div>
