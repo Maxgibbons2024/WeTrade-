@@ -385,23 +385,23 @@ export default function Deals() {
 
   // ---- Transaction edit handlers ----
   function openTxEdit(tx) {
+    // Deal-origin → use the full deal edit form
+    if (tx.origin === 'deal') {
+      handleEditDeal(tx.ref);
+      return;
+    }
     setEditingTx(tx);
     const ref = tx.ref;
-    if (tx.origin === 'deal') {
-      setTxForm({
-        date: ref.created_at ? ref.created_at.slice(0, 10) : '',
-        client_name: ref.client_name || '',
-        amount: ref.front_end ?? '',
-        closer_id: ref.closer_id || '',
-        type: tx.type,
-      });
-    } else if (tx.origin === 'receipt') {
+    if (tx.origin === 'receipt') {
       setTxForm({
         date: ref.received_at ? ref.received_at.slice(0, 10) : '',
         client_name: ref.client_name || '',
         amount: ref.amount ?? '',
+        success: ref.success ?? true,
+        matched: ref.matched ?? false,
         closer_id: tx.closer_id || '',
         type: tx.type,
+        raw_text: ref.raw_text || '',
       });
     } else {
       // manual
@@ -409,8 +409,12 @@ export default function Deals() {
         date: ref.payment_date ? ref.payment_date.slice(0, 10) : '',
         client_name: ref.client_name || '',
         amount: ref.amount ?? '',
+        success: true,
+        matched: true,
         closer_id: tx.closer_id || '',
         type: tx.type,
+        payment_method: ref.payment_method || '',
+        notes: ref.notes || '',
       });
     }
   }
@@ -425,21 +429,12 @@ export default function Deals() {
     setSubmitting(true);
     try {
       const ref = editingTx.ref;
-      if (editingTx.origin === 'deal') {
-        const updates = {
-          client_name: txForm.client_name.trim(),
-          front_end: Number(txForm.amount) || 0,
-          closer_id: txForm.closer_id || ref.closer_id,
-        };
-        const c = CLOSERS.find((cl) => cl.id === updates.closer_id);
-        if (c) updates.closer_name = c.name;
-        if (txForm.date) updates.created_at = new Date(txForm.date).toISOString();
-        await updateRow('deals', ref.id, updates);
-        refetch();
-      } else if (editingTx.origin === 'receipt') {
+      if (editingTx.origin === 'receipt') {
         const updates = {
           client_name: txForm.client_name.trim(),
           amount: Number(txForm.amount) || 0,
+          success: txForm.success,
+          matched: txForm.matched,
         };
         if (txForm.date) updates.received_at = new Date(txForm.date).toISOString();
         await updateRow('payment_receipts', ref.id, updates);
@@ -450,6 +445,8 @@ export default function Deals() {
           amount: Number(txForm.amount) || 0,
         };
         if (txForm.date) updates.payment_date = txForm.date;
+        if (txForm.payment_method) updates.payment_method = txForm.payment_method;
+        if (txForm.notes !== undefined) updates.notes = txForm.notes || null;
         await updateRow('manual_payments', ref.id, updates);
         refetchManual();
       }
@@ -612,20 +609,62 @@ export default function Deals() {
         </div>
       )}
 
-      {/* Transaction edit SlideOver */}
-      <SlideOver open={!!editingTx} onClose={closeTxEdit} title={editingTx ? `Edit Transaction — ${editingTx.client}` : ''}>
+      {/* Transaction edit SlideOver (receipts & manual payments) */}
+      <SlideOver open={!!editingTx} onClose={closeTxEdit} title={editingTx ? `Edit — ${editingTx.client}` : ''}>
         {editingTx && (
           <form onSubmit={handleSaveTx} className="space-y-4">
+            {/* Status badge */}
             <div className="bg-brand-dark/60 border border-gray-800 rounded-lg p-3 flex items-center gap-2">
               <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
-                editingTx.type === 'new_cash' ? 'bg-green-500/10 text-green-400 border-green-500/30' :
-                editingTx.type === 'payment_plan' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
-                'bg-red-500/10 text-red-400 border-red-500/30'
+                txForm.success ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'
               }`}>
-                {editingTx.type === 'new_cash' ? 'New Cash' : editingTx.type === 'payment_plan' ? 'Payment Plan' : 'Failed'}
+                {txForm.success ? 'Success' : 'Failed'}
               </span>
               <span className="text-xs text-gray-500 capitalize">Source: {editingTx.origin}</span>
+              {editingTx.origin === 'receipt' && !txForm.matched && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/30">Unmatched</span>
+              )}
             </div>
+
+            {/* Source message */}
+            {txForm.raw_text && (
+              <div className="bg-brand-dark/40 border border-gray-800 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-1">Source message</p>
+                <p className="text-xs text-gray-400 break-all">{txForm.raw_text}</p>
+              </div>
+            )}
+
+            {/* Success / Failed toggle */}
+            {editingTx.origin === 'receipt' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Payment Status</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, success: true })}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                      txForm.success
+                        ? 'bg-green-500/20 text-green-400 border-green-500/40'
+                        : 'bg-brand-dark text-gray-500 border-gray-700 hover:text-gray-300'
+                    }`}
+                  >
+                    Success
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, success: false })}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                      !txForm.success
+                        ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                        : 'bg-brand-dark text-gray-500 border-gray-700 hover:text-gray-300'
+                    }`}
+                  >
+                    Failed
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date</label>
               <input
@@ -655,19 +694,63 @@ export default function Deals() {
                 className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
               />
             </div>
-            {editingTx.origin === 'deal' && (
+
+            {/* Matched toggle for receipts */}
+            {editingTx.origin === 'receipt' && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Closer</label>
-                <select
-                  value={txForm.closer_id}
-                  onChange={(e) => setTxForm({ ...txForm, closer_id: e.target.value })}
-                  className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
-                >
-                  <option value="">—</option>
-                  {CLOSERS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <label className="block text-xs text-gray-500 mb-1">Matched</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, matched: true })}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                      txForm.matched
+                        ? 'bg-green-500/20 text-green-400 border-green-500/40'
+                        : 'bg-brand-dark text-gray-500 border-gray-700 hover:text-gray-300'
+                    }`}
+                  >
+                    Linked
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, matched: false })}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                      !txForm.matched
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                        : 'bg-brand-dark text-gray-500 border-gray-700 hover:text-gray-300'
+                    }`}
+                  >
+                    Unmatched
+                  </button>
+                </div>
               </div>
             )}
+
+            {/* Manual payment extras */}
+            {editingTx.origin === 'manual' && (
+              <>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Payment Method</label>
+                  <input
+                    type="text"
+                    value={txForm.payment_method || ''}
+                    onChange={(e) => setTxForm({ ...txForm, payment_method: e.target.value })}
+                    placeholder="e.g. bank_transfer, stripe"
+                    className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                  <textarea
+                    value={txForm.notes || ''}
+                    onChange={(e) => setTxForm({ ...txForm, notes: e.target.value })}
+                    rows={2}
+                    className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan resize-none"
+                  />
+                </div>
+              </>
+            )}
+
             <button
               type="submit"
               disabled={submitting}
