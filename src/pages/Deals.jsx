@@ -44,6 +44,7 @@ export default function Deals() {
   const [filterCloser, setFilterCloser] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [txTypeFilter, setTxTypeFilter] = useState('all'); // 'all' | 'new_cash' | 'payment_plan' | 'failed'
+  const [checkedTxs, setCheckedTxs] = useState(new Set());
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('all');
   const [viewingDeal, setViewingDeal] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -183,6 +184,27 @@ export default function Deals() {
   }, [filteredTransactions]);
 
   const transactionColumns = [
+    {
+      key: 'id',
+      label: '',
+      sortable: false,
+      render: (val) => (
+        <input
+          type="checkbox"
+          checked={checkedTxs.has(val)}
+          onChange={(e) => {
+            e.stopPropagation();
+            setCheckedTxs((prev) => {
+              const next = new Set(prev);
+              next.has(val) ? next.delete(val) : next.add(val);
+              return next;
+            });
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-4 h-4 rounded border-gray-600 bg-brand-dark text-brand-cyan focus:ring-brand-cyan focus:ring-offset-0 cursor-pointer accent-[#27CCE7]"
+        />
+      ),
+    },
     { key: 'date', label: 'Date', render: (val) => <span className="text-xs text-gray-400">{formatDate(val)}</span> },
     { key: 'client', label: 'Client', render: (val) => <span className="font-medium">{val || <span className="text-gray-600 italic">unknown</span>}</span> },
     {
