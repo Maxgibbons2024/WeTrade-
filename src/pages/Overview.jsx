@@ -70,11 +70,13 @@ export default function Overview() {
     const now = new Date();
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const totalDays = monthEnd.getDate();
-    const daysPassed = now.getDate();
-    const daysRemaining = totalDays - daysPassed;
+    const dayOfMonth = now.getDate();
+    // Today is still in progress — use completed days for rates, remaining includes today
+    const completedDays = Math.max(1, dayOfMonth - 1);
+    const daysRemaining = totalDays - completedDays;
 
-    // Daily run rate based on cash collected so far
-    const runRate = daysPassed > 0 ? totalCashCollected / daysPassed : 0;
+    // Daily run rate based on completed days
+    const runRate = totalCashCollected / completedDays;
 
     // Gap to target
     const remaining = Math.max(0, monthlyTarget - totalCashCollected);
@@ -107,7 +109,7 @@ export default function Overview() {
     // but avg deal size uses total FE so all collected cash is attributed
     const dealsCount = newDeals.length;
     const avgDealSize = dealsCount > 0 ? frontEndCollected / dealsCount : 0;
-    const dealsPerDay = daysPassed > 0 ? dealsCount / daysPassed : 0;
+    const dealsPerDay = dealsCount / completedDays;
     const projectedNewDeals = dealsPerDay * daysRemaining;
     const cashProjectionAdditional = projectedNewDeals * avgDealSize + ppExpected;
     const method1Total = totalCashCollected + cashProjectionAdditional;
@@ -116,7 +118,7 @@ export default function Overview() {
     const callsTaken = aggLive;
     const revenuePerCall = callsTaken > 0 ? totalCashCollected / callsTaken : 0;
     const callsBooked = aggScheduled;
-    const avgBookedPerDay = daysPassed > 0 ? callsBooked / daysPassed : 0;
+    const avgBookedPerDay = callsBooked / completedDays;
     const projectedNewCalls = avgBookedPerDay * daysRemaining;
     const projectedCallsTaken = projectedNewCalls * showRate;
     const callsProjectionAdditional = projectedCallsTaken * revenuePerCall;
@@ -141,7 +143,7 @@ export default function Overview() {
     const callsNeededTaken = revenuePerCall > 0 ? gapToTarget / revenuePerCall : 0;
     const callsNeededBooked = showRate > 0 ? callsNeededTaken / showRate : 0;
     const requiredBookingsPerDay = daysRemaining > 0 ? callsNeededBooked / daysRemaining : 0;
-    const currentBookingsPerDay = daysPassed > 0 ? callsBooked / daysPassed : 0;
+    const currentBookingsPerDay = callsBooked / completedDays;
     const paceRatio = requiredBookingsPerDay > 0 ? currentBookingsPerDay / requiredBookingsPerDay : 1;
 
     // Required daily cash to hit target (after PP)
@@ -149,7 +151,7 @@ export default function Overview() {
     const requiredDaily = daysRemaining > 0 ? gapAfterPP / daysRemaining : 0;
 
     return {
-      daysPassed, daysRemaining, totalDays,
+      dayOfMonth, daysRemaining, totalDays,
       runRate, remaining, ppExpected, requiredDaily, gapAfterPP,
       // Method 1
       dealsCount, avgDealSize, dealsPerDay, projectedNewDeals: Math.round(projectedNewDeals),
@@ -457,7 +459,7 @@ export default function Overview() {
         <div className="mb-4">
           <div className="flex justify-between text-xs mb-1.5">
             <span className="text-gray-500">
-              {formatCurrency(totalCashCollected)} collected · Day {targetStats.daysPassed} of {targetStats.totalDays}
+              {formatCurrency(totalCashCollected)} collected · Day {targetStats.dayOfMonth} of {targetStats.totalDays}
             </span>
             <span className={targetStats.onTrack ? 'text-green-400 font-semibold' : 'text-amber-400 font-semibold'}>
               {Math.round((totalCashCollected / monthlyTarget) * 100)}%
@@ -467,8 +469,8 @@ export default function Overview() {
             {/* Where you should be line */}
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-gray-500 z-10"
-              style={{ left: `${(targetStats.daysPassed / targetStats.totalDays) * 100}%` }}
-              title={`Day ${targetStats.daysPassed} pace marker`}
+              style={{ left: `${(targetStats.dayOfMonth / targetStats.totalDays) * 100}%` }}
+              title={`Day ${targetStats.dayOfMonth} pace marker`}
             />
             <div
               className={`h-full rounded-full transition-all duration-500 ${targetStats.onTrack ? 'bg-green-400' : 'bg-amber-400'}`}
