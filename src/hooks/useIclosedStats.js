@@ -131,5 +131,21 @@ export default function useIclosedStats(dateRange) {
       .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
   }, [allCalls]);
 
-  return { calls, byCloser, daily, upcomingToday, loading, error, refetch };
+  // All future booked calls from now through end of month — for target projections
+  const upcomingThisMonth = useMemo(() => {
+    const now = new Date();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const nowMs = now.getTime();
+    const endMs = monthEnd.getTime();
+    return (allCalls || [])
+      .filter((c) => {
+        if (isCancelled(c)) return false;
+        if (!c.scheduled_at) return false;
+        const t = new Date(c.scheduled_at).getTime();
+        return t > nowMs && t <= endMs;
+      })
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+  }, [allCalls]);
+
+  return { calls, byCloser, daily, upcomingToday, upcomingThisMonth, loading, error, refetch };
 }

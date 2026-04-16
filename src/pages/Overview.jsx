@@ -27,7 +27,7 @@ export default function Overview() {
   });
   const [editingTarget, setEditingTarget] = useState(false);
 
-  const { byCloser: iclosedByCloser, upcomingToday } = useIclosedStats(dateRange);
+  const { byCloser: iclosedByCloser, upcomingToday, upcomingThisMonth } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -89,8 +89,8 @@ export default function Overview() {
       })
       .reduce((sum, p) => sum + Number(p.monthly_amount || 0), 0);
 
-    // Call-based projection: show rate × close rate × avg deal size × remaining calls
-    // Uses aggregate stats from active closers
+    // Call-based projection using ACTUAL booked calls from iClosed calendar
+    // + estimated unbooked calls for remaining days without bookings
     let aggScheduled = 0;
     let aggLive = 0;
     let aggCloses = 0;
@@ -106,10 +106,17 @@ export default function Overview() {
     const avgDealSize = rangeDeals.length > 0
       ? rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0) / rangeDeals.length
       : 0;
-    // Estimate remaining calls = (calls so far / days passed) × days remaining
+    // Actual booked calls remaining this month (from iClosed calendar)
+    const bookedCalls = (upcomingThisMonth || []).length;
+    // Estimate additional calls that may be booked for days not yet in the calendar
+    // based on the booking rate so far (calls per day)
     const callsPerDay = daysPassed > 0 ? aggScheduled / daysPassed : 0;
-    const remainingCalls = callsPerDay * daysRemaining;
-    const projectedNewDeals = remainingCalls * showRate * closeRate * avgDealSize;
+    // Days that already have bookings in the calendar
+    const bookedDays = new Set((upcomingThisMonth || []).map((c) => c.scheduled_at?.slice(0, 10))).size;
+    const unbookedDays = Math.max(0, daysRemaining - bookedDays);
+    const estimatedAdditionalCalls = callsPerDay * unbookedDays;
+    const totalRemainingCalls = bookedCalls + estimatedAdditionalCalls;
+    const projectedNewDeals = totalRemainingCalls * showRate * closeRate * avgDealSize;
 
     // Total projected
     const totalProjected = totalCashCollected + ppExpected + projectedNewDeals;
@@ -124,9 +131,11 @@ export default function Overview() {
       remaining, ppExpected, projectedNewDeals, totalProjected,
       showRate, closeRate, avgDealSize,
       requiredDaily, gapAfterPP,
+      bookedCalls, estimatedAdditionalCalls: Math.round(estimatedAdditionalCalls),
+      totalRemainingCalls: Math.round(totalRemainingCalls),
       onTrack: totalProjected >= monthlyTarget,
     };
-  }, [totalCashCollected, monthlyTarget, paymentPlans, iclosedByCloser, rangeDeals]);
+  }, [totalCashCollected, monthlyTarget, paymentPlans, iclosedByCloser, rangeDeals, upcomingThisMonth]);
 
   // iClosed call stats (aggregated across all closers in the date range)
   const callStats = useMemo(() => {
@@ -479,7 +488,7 @@ export default function Overview() {
               <span className="text-gray-400">
                 + Projected new deals
                 <span className="text-[10px] text-gray-600 ml-1">
-                  ({Math.round(targetStats.showRate * 100)}% show × {Math.round(targetStats.closeRate * 100)}% close × {formatCurrency(targetStats.avgDealSize)} avg)
+                  ({targetStats.bookedCalls} booked + ~{targetStats.estimatedAdditionalCalls} est. calls × {Math.round(targetStats.showRate * 100)}% show × {Math.round(targetStats.closeRate * 100)}% close × {formatCurrency(targetStats.avgDealSize)} avg)
                 </span>
               </span>
               <span className="font-semibold text-brand-cyan">+{formatCurrency(targetStats.projectedNewDeals)}</span>
