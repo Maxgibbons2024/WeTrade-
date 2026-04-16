@@ -266,16 +266,17 @@ export default function PaymentPlans() {
   }
 
   const filteredPlans = useMemo(() => {
-    if (!dateRange.start) return plans;
-    return plans.filter((p) => {
+    const base = plans.filter((p) => p.status !== 'cancelled');
+    if (!dateRange.start) return base;
+    return base.filter((p) => {
       // Always show overdue plans regardless of date filter
       if (p.status === 'overdue') return true;
       return isInDateRange(p.next_due_date, dateRange.start, dateRange.end);
     });
   }, [plans, dateRange]);
 
-  const activePlans = useMemo(() => plans.filter((p) => p.status !== 'completed'), [plans]);
-  const filteredActive = useMemo(() => filteredPlans.filter((p) => p.status !== 'completed'), [filteredPlans]);
+  const activePlans = useMemo(() => plans.filter((p) => p.status !== 'completed' && p.status !== 'cancelled'), [plans]);
+  const filteredActive = useMemo(() => filteredPlans.filter((p) => p.status !== 'completed' && p.status !== 'cancelled'), [filteredPlans]);
   const filteredOverdue = useMemo(() => filteredPlans.filter((p) => p.status === 'overdue'), [filteredPlans]);
   const filteredDueTotal = useMemo(() => filteredActive.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredActive]);
   const filteredOverdueTotal = useMemo(() => filteredOverdue.reduce((sum, p) => sum + Number(p.monthly_amount), 0), [filteredOverdue]);
