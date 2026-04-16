@@ -501,38 +501,38 @@ export default function Overview() {
         </div>
 
         {/* Dual-method projection */}
-        <h4 className="text-xs text-gray-500 font-medium mb-3">Projection to Month End</h4>
+        <h4 className="text-xs text-gray-300 font-medium mb-3">Projection to Month End</h4>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
           {/* Method 1: Cash-Based */}
           <div className="bg-brand-dark rounded-lg p-4">
             <h5 className="text-xs font-semibold text-brand-cyan mb-3">Method 1: Cash-Based</h5>
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-gray-500">Deals closed</span>
-                <span className="text-gray-300">{targetStats.dealsCount} deals</span>
+                <span className="text-gray-300">Deals closed</span>
+                <span className="text-white">{targetStats.dealsCount} deals</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Avg deal size</span>
-                <span className="text-gray-300">{formatCurrency(targetStats.avgDealSize)}</span>
+                <span className="text-gray-300">Avg deal size</span>
+                <span className="text-white">{formatCurrency(targetStats.avgDealSize)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Deals/day</span>
-                <span className="text-gray-300">{targetStats.dealsPerDay.toFixed(1)}</span>
+                <span className="text-gray-300">Deals/day</span>
+                <span className="text-white">{targetStats.dealsPerDay.toFixed(1)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Projected new deals</span>
-                <span className="text-gray-300">{targetStats.projectedNewDeals} ({targetStats.dealsPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
+                <span className="text-gray-300">Projected new deals</span>
+                <span className="text-white">{targetStats.projectedNewDeals} ({targetStats.dealsPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">New deal revenue</span>
-                <span className="text-gray-300">{formatCurrency(targetStats.projectedNewDeals * targetStats.avgDealSize)}</span>
+                <span className="text-gray-300">New deal revenue</span>
+                <span className="text-white">{formatCurrency(targetStats.projectedNewDeals * targetStats.avgDealSize)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">+ PP expected</span>
+                <span className="text-gray-300">+ PP expected</span>
                 <span className="text-green-400">{formatCurrency(targetStats.ppExpected)}</span>
               </div>
               <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between">
-                <span className="text-gray-400 font-medium">Projection</span>
+                <span className="text-white font-medium">Projection</span>
                 <span className={`font-bold ${targetStats.method1Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
                   {formatCurrency(targetStats.method1Total)}
                 </span>
@@ -545,31 +545,31 @@ export default function Overview() {
             <h5 className="text-xs font-semibold text-purple-400 mb-3">Method 2: Calls-Based</h5>
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-gray-500">Calls taken</span>
-                <span className="text-gray-300">{targetStats.callsTaken} calls</span>
+                <span className="text-gray-300">Calls taken</span>
+                <span className="text-white">{targetStats.callsTaken} calls</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Revenue per call</span>
-                <span className="text-gray-300">{formatCurrency(targetStats.revenuePerCall)}</span>
+                <span className="text-gray-300">Revenue per call</span>
+                <span className="text-white">{formatCurrency(targetStats.revenuePerCall)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Calls booked/day</span>
-                <span className="text-gray-300">{targetStats.avgBookedPerDay.toFixed(1)}</span>
+                <span className="text-gray-300">Calls booked/day</span>
+                <span className="text-white">{targetStats.avgBookedPerDay.toFixed(1)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Projected new calls</span>
-                <span className="text-gray-300">{targetStats.projectedNewCalls} ({targetStats.avgBookedPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
+                <span className="text-gray-300">Projected new calls</span>
+                <span className="text-white">{targetStats.projectedNewCalls} ({targetStats.avgBookedPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">x {Math.round(targetStats.showRate * 100)}% show rate</span>
-                <span className="text-gray-300">{targetStats.projectedCallsTaken} calls taken</span>
+                <span className="text-gray-300">x {Math.round(targetStats.showRate * 100)}% show rate</span>
+                <span className="text-white">{targetStats.projectedCallsTaken} calls taken</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Additional revenue</span>
-                <span className="text-gray-300">{formatCurrency(targetStats.callsProjectionAdditional)}</span>
+                <span className="text-gray-300">Additional revenue</span>
+                <span className="text-white">{formatCurrency(targetStats.callsProjectionAdditional)}</span>
               </div>
               <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between">
-                <span className="text-gray-400 font-medium">Projection</span>
+                <span className="text-white font-medium">Projection</span>
                 <span className={`font-bold ${targetStats.method2Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
                   {formatCurrency(targetStats.method2Total)}
                 </span>
@@ -582,8 +582,8 @@ export default function Overview() {
         <div className="bg-brand-dark rounded-lg p-4">
           <div className="flex justify-between items-center">
             <div>
-              <p className="text-xs text-gray-500">Average Projection (both methods)</p>
-              <p className="text-[10px] text-gray-600 mt-0.5">
+              <p className="text-xs text-gray-300">Average Projection (both methods)</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
                 {formatCurrency(totalCashCollected)} collected + {formatCurrency(targetStats.cashProjectionAdditional)} cash-based / {formatCurrency(targetStats.callsProjectionAdditional)} calls-based additional
               </p>
             </div>
