@@ -112,21 +112,21 @@ export default function useIclosedStats(dateRange) {
     return result;
   }, [calls]);
 
-  // Upcoming calls from "now" through end of today (local) — bypasses the
-  // past-only filter used by calls/byCloser/daily. Sorted chronologically,
-  // excludes cancelled.
-  const upcomingToday = useMemo(() => {
+  // All calls scheduled for today (past and upcoming), excludes cancelled.
+  const todayCalls = useMemo(() => {
     const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
-    const nowMs = now.getTime();
+    const startMs = startOfDay.getTime();
     const endMs = endOfDay.getTime();
     return (allCalls || [])
       .filter((c) => {
         if (isCancelled(c)) return false;
         if (!c.scheduled_at) return false;
         const t = new Date(c.scheduled_at).getTime();
-        return t >= nowMs && t <= endMs;
+        return t >= startMs && t <= endMs;
       })
       .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
   }, [allCalls]);
@@ -164,5 +164,5 @@ export default function useIclosedStats(dateRange) {
     return last7.length / 7;
   }, [allCalls]);
 
-  return { calls, byCloser, daily, upcomingToday, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
+  return { calls, byCloser, daily, todayCalls, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
 }

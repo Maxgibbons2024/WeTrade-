@@ -27,7 +27,7 @@ export default function Overview() {
   });
   const [editingTarget, setEditingTarget] = useState(false);
 
-  const { byCloser: iclosedByCloser, upcomingToday } = useIclosedStats(dateRange);
+  const { byCloser: iclosedByCloser, todayCalls } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -265,24 +265,31 @@ export default function Overview() {
     }).sort((a, b) => b.score - a.score);
   }, [iclosedByCloser, rangeDeals]);
 
-  // Weekly revenue chart data
+  // Weekly revenue chart data — current month only, Mon-Sun weeks
   const chartData = useMemo(() => {
-    const weeks = [];
     const now = new Date();
-    for (let i = 7; i >= 0; i--) {
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - i * 7);
-      weekStart.setHours(0, 0, 0, 0);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 7);
-      weeks.push({ start: weekStart, end: weekEnd });
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    // Build week boundaries within the current month
+    const weeks = [];
+    let cursor = new Date(monthStart);
+    while (cursor <= monthEnd) {
+      const weekStart = new Date(cursor);
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      // Cap at month end
+      const cappedEnd = weekEnd > monthEnd ? new Date(monthEnd) : weekEnd;
+      cappedEnd.setHours(23, 59, 59, 999);
+      weeks.push({ start: weekStart, end: cappedEnd });
+      cursor.setDate(cursor.getDate() + 7);
     }
 
     const collected = weeks.map((w) =>
       salesDeals
         .filter((d) => {
           const dt = new Date(d.created_at);
-          return dt >= w.start && dt < w.end;
+          return dt >= w.start && dt <= w.end;
         })
         .reduce((sum, d) => sum + Number(d.front_end || 0), 0)
     );
@@ -292,13 +299,15 @@ export default function Overview() {
         .filter((p) => p.status !== 'completed')
         .reduce((sum, p) => {
           const due = new Date(p.next_due_date);
-          return due >= w.start && due < w.end ? sum + Number(p.monthly_amount || 0) : sum;
+          return due >= w.start && due <= w.end ? sum + Number(p.monthly_amount || 0) : sum;
         }, 0)
     );
 
-    const labels = weeks.map((w) =>
-      w.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    );
+    const labels = weeks.map((w) => {
+      const s = w.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const e = w.end.toLocaleDateString('en-GB', { day: 'numeric' });
+      return `${s}–${e}`;
+    });
 
     return {
       labels,
@@ -819,26 +828,44 @@ export default function Overview() {
         </div>
       </div>
 
-      {/* Upcoming calls today */}
+      {/* Today's calls */}
       <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5 mt-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-gray-400">Upcoming Today</h3>
-          <span className="text-xs text-gray-500">{upcomingToday?.length || 0} scheduled</span>
+          <h3 className="text-sm font-medium text-gray-400">Today's Calls</h3>
+          <span className="text-xs text-gray-500">
+            {todayCalls?.length || 0} scheduled
+            {todayCalls?.length > 0 && (() => {
+              const nowMs = Date.now();
+              const done = todayCalls.filter((c) => new Date(c.scheduled_at).getTime() < nowMs).length;
+              const remaining = todayCalls.length - done;
+              return ` · ${done} done · ${remaining} remaining`;
+            })()}
+          </span>
         </div>
-        {!upcomingToday?.length ? (
-          <p className="text-sm text-gray-500">No more calls scheduled for today.</p>
+        {!todayCalls?.length ? (
+          <p className="text-sm text-gray-500">No calls scheduled for today.</p>
         ) : (
           <div className="space-y-2">
-            {upcomingToday.map((call) => {
+            {todayCalls.map((call) => {
               const time = new Date(call.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+              const isPast = new Date(call.scheduled_at).getTime() < Date.now();
               return (
-                <div key={call.id} className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.02]">
-                  <div className="text-brand-cyan font-mono text-sm font-semibold w-14 tabular-nums">{time}</div>
+                <div key={call.id} className={`flex items-center gap-3 p-3 rounded-lg ${isPast ? 'bg-white/[0.01] opacity-50' : 'bg-white/[0.02]'}`}>
+                  <div className={`font-mono text-sm font-semibold w-14 tabular-nums ${isPast ? 'text-gray-500' : 'text-brand-cyan'}`}>{time}</div>
                   {call.closer_id ? <CloserAvatar closerId={call.closer_id} /> : <div className="w-8 h-8 rounded-full bg-gray-800" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{call.contact_name || call.contact_email || 'Unknown'}</p>
-                    <p className="text-xs text-gray-500 truncate">{call.event_type || 'Call'}{call.utm_source ? ` · ${call.utm_source}` : ''}</p>
+                    <p className="text-xs text-gray-500 truncate">{call.event_type || 'Call'}{call.closer_id ? ` · ${call.closer_id}` : ''}</p>
                   </div>
+                  {isPast && call.status && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      call.status === 'SHOWED' || call.status === 'COMPLETED' || call.status === 'CLOSED' ? 'bg-green-400/10 text-green-400'
+                      : call.status === 'NO_SHOW' || call.status === 'NOSHOW' ? 'bg-red-400/10 text-red-400'
+                      : 'bg-gray-700 text-gray-400'
+                    }`}>
+                      {call.status.toLowerCase()}
+                    </span>
+                  )}
                 </div>
               );
             })}
