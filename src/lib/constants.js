@@ -1,12 +1,13 @@
 export const CLOSERS = [
-  { id: 'lloyd', name: 'Lloyd', initials: 'LL', color: '#27CCE7' },
-  { id: 'dave', name: 'Dave', initials: 'DV', color: '#F59E0B' },
-  { id: 'zak', name: 'Zak', initials: 'ZK', color: '#10B981' },
-  { id: 'joe', name: 'Joe', initials: 'JO', color: '#8B5CF6' },
-  { id: 'shea', name: 'Shea', initials: 'SH', color: '#EC4899' },
-  { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316' },
-  { id: 'community', name: 'Community', initials: 'CO', color: '#6B7280' },
+  { id: 'lloyd', name: 'Lloyd', initials: 'LL', color: '#27CCE7', active: true },
+  { id: 'dave', name: 'Dave', initials: 'DV', color: '#F59E0B', active: true },
+  { id: 'zak', name: 'Zak', initials: 'ZK', color: '#10B981', active: true },
+  { id: 'joe', name: 'Joe', initials: 'JO', color: '#8B5CF6', active: false },
+  { id: 'shea', name: 'Shea', initials: 'SH', color: '#EC4899', active: false },
+  { id: 'chris', name: 'Chris', initials: 'CH', color: '#F97316', active: false },
+  { id: 'community', name: 'Community', initials: 'CO', color: '#6B7280', active: false },
 ];
+export const ACTIVE_CLOSERS = CLOSERS.filter((c) => c.active);
 
 export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite', 'Mastermind'];
 

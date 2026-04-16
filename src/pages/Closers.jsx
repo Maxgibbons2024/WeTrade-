@@ -15,7 +15,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery } from '../hooks/useSupabase';
-import { CLOSERS, formatCurrency, isInDateRange, isCommunityOnly } from '../lib/constants';
+import { CLOSERS, ACTIVE_CLOSERS, formatCurrency, isInDateRange, isCommunityOnly } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 import useIclosedStats from '../hooks/useIclosedStats';
 
@@ -24,6 +24,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 export default function Closers() {
   const [filter, setFilter] = useState('all');
   const [expandedCloser, setExpandedCloser] = useState(null);
+  const [showInactive, setShowInactive] = useState(false);
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
   const { byCloser: iclosedByCloser, daily: iclosedDaily } = useIclosedStats(dateRange);
@@ -95,7 +96,9 @@ export default function Closers() {
     });
   }, [deals, eodCalls, paymentPlans, fathomCalls, receipts, dateRange, iclosedByCloser]);
 
-  const displayed = filter === 'all' ? closerStats : closerStats.filter((c) => c.id === filter);
+  const activeStats = closerStats.filter((c) => c.active);
+  const inactiveStats = closerStats.filter((c) => !c.active && c.id !== 'community');
+  const displayed = filter === 'all' ? activeStats : closerStats.filter((c) => c.id === filter);
 
   // Show rate trend (last 8 weeks)
   const trendData = useMemo(() => {
@@ -173,7 +176,7 @@ export default function Closers() {
           >
             All
           </button>
-          {CLOSERS.map((c) => (
+          {ACTIVE_CLOSERS.map((c) => (
             <button
               key={c.id}
               onClick={() => setFilter(c.id)}
@@ -434,6 +437,34 @@ export default function Closers() {
           );
         })}
       </div>
+
+      {/* Inactive closers — collapsed by default */}
+      {filter === 'all' && inactiveStats.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowInactive(!showInactive)}
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors mb-3"
+          >
+            <span>{showInactive ? '▼' : '▶'}</span>
+            <span>Former closers ({inactiveStats.length})</span>
+          </button>
+          {showInactive && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-60">
+              {inactiveStats.map((stat) => (
+                <div key={stat.id} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-4">
+                  <div className="flex items-center gap-3">
+                    <CloserAvatar closerId={stat.id} size="sm" />
+                    <div className="flex-1">
+                      <h3 className="text-sm font-medium text-gray-400">{stat.name}</h3>
+                      <p className="text-xs text-gray-600">{stat.closesCount} closes · {formatCurrency(stat.mtdRevenue)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Monthly trend chart */}
       <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">

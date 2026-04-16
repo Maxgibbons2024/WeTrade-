@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,7 +14,7 @@ import CloserAvatar from '../components/CloserAvatar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useQuery, useRealtime } from '../hooks/useSupabase';
-import { formatCurrency, formatDate, isInDateRange, isCommunityOnly, calcDelta, CLOSERS } from '../lib/constants';
+import { formatCurrency, formatDate, isInDateRange, isCommunityOnly, calcDelta, CLOSERS, ACTIVE_CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 import useIclosedStats from '../hooks/useIclosedStats';
 
@@ -22,6 +22,10 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function Overview() {
   const { preset, setPreset, presets, dateRange, compareEnabled, setCompareEnabled, compareRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
+  const [monthlyTarget, setMonthlyTarget] = useState(() => {
+    try { return Number(localStorage.getItem('wetrade_monthly_target')) || 100000; } catch { return 100000; }
+  });
+  const [editingTarget, setEditingTarget] = useState(false);
 
   const { byCloser: iclosedByCloser, upcomingToday } = useIclosedStats(dateRange);
 
@@ -58,6 +62,71 @@ export default function Overview() {
     return stripeTotal + manualTotal;
   }, [rangeReceipts, rangeManual]);
   const totalCashCollected = frontEndCollected + ppCollected;
+
+  // ---- Target tracking ----
+  const targetStats = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const totalDays = monthEnd.getDate();
+    const daysPassed = now.getDate();
+    const daysRemaining = totalDays - daysPassed;
+
+    // Daily run rate based on cash collected so far this month
+    const runRate = daysPassed > 0 ? totalCashCollected / daysPassed : 0;
+    const projectedAtRunRate = runRate * totalDays;
+
+    // Gap to target
+    const remaining = Math.max(0, monthlyTarget - totalCashCollected);
+
+    // PP payments expected rest of month — active plans with next_due <= month end
+    const ppExpected = (paymentPlans || [])
+      .filter((p) => p.status === 'active' || p.status === 'due_soon' || p.status === 'overdue')
+      .filter((p) => {
+        if (!p.next_due_date) return false;
+        const due = new Date(p.next_due_date);
+        return due >= now && due <= monthEnd;
+      })
+      .reduce((sum, p) => sum + Number(p.monthly_amount || 0), 0);
+
+    // Call-based projection: show rate × close rate × avg deal size × remaining calls
+    // Uses aggregate stats from active closers
+    let aggScheduled = 0;
+    let aggLive = 0;
+    let aggCloses = 0;
+    for (const closer of ACTIVE_CLOSERS) {
+      const stats = iclosedByCloser?.[closer.id];
+      if (!stats) continue;
+      aggScheduled += stats.scheduled || 0;
+      aggLive += stats.live || 0;
+      aggCloses += stats.closes || 0;
+    }
+    const showRate = aggScheduled > 0 ? aggLive / aggScheduled : 0;
+    const closeRate = aggLive > 0 ? aggCloses / aggLive : 0;
+    const avgDealSize = rangeDeals.length > 0
+      ? rangeDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0) / rangeDeals.length
+      : 0;
+    // Estimate remaining calls = (calls so far / days passed) × days remaining
+    const callsPerDay = daysPassed > 0 ? aggScheduled / daysPassed : 0;
+    const remainingCalls = callsPerDay * daysRemaining;
+    const projectedNewDeals = remainingCalls * showRate * closeRate * avgDealSize;
+
+    // Total projected
+    const totalProjected = totalCashCollected + ppExpected + projectedNewDeals;
+
+    // Required daily to hit target (from new deals only, after PP)
+    const gapAfterPP = Math.max(0, remaining - ppExpected);
+    const requiredDaily = daysRemaining > 0 ? gapAfterPP / daysRemaining : 0;
+
+    return {
+      daysPassed, daysRemaining, totalDays,
+      runRate, projectedAtRunRate,
+      remaining, ppExpected, projectedNewDeals, totalProjected,
+      showRate, closeRate, avgDealSize,
+      requiredDaily, gapAfterPP,
+      onTrack: totalProjected >= monthlyTarget,
+    };
+  }, [totalCashCollected, monthlyTarget, paymentPlans, iclosedByCloser, rangeDeals]);
 
   // iClosed call stats (aggregated across all closers in the date range)
   const callStats = useMemo(() => {
@@ -135,7 +204,7 @@ export default function Overview() {
 
   // Closer leaderboard — now powered by iClosed for all 6 closers, not just lloyd/dave/zak
   const leaderboard = useMemo(() => {
-    return CLOSERS.map((closer) => {
+    return ACTIVE_CLOSERS.map((closer) => {
       const closerDeals = rangeDeals.filter((d) => d.closer_id === closer.id);
       const revenue = closerDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
       const pifCount = closerDeals.filter((d) => !Number(d.monthly_amount)).length;
@@ -312,6 +381,121 @@ export default function Overview() {
           danger={cancellationStats.count > 0}
           subtitle={cancellationStats.count > 0 ? `${formatCurrency(cancellationStats.lostRemaining)} lost` : 'None'}
         />
+      </div>
+
+      {/* Monthly Target Tracker */}
+      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-gray-400">Monthly Target</h3>
+          <div className="flex items-center gap-2">
+            {editingTarget ? (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                localStorage.setItem('wetrade_monthly_target', monthlyTarget);
+                setEditingTarget(false);
+              }} className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">£</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={monthlyTarget}
+                  onChange={(e) => setMonthlyTarget(Number(e.target.value) || 0)}
+                  className="w-28 bg-brand-dark border border-gray-700 rounded-lg px-2 py-1 text-sm text-brand-cyan font-semibold focus:outline-none focus:border-brand-cyan"
+                  autoFocus
+                />
+                <button type="submit" className="text-xs text-brand-cyan hover:text-white">Save</button>
+              </form>
+            ) : (
+              <button onClick={() => setEditingTarget(true)} className="text-lg font-bold text-brand-cyan hover:text-white transition-colors">
+                {formatCurrency(monthlyTarget)}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mb-4">
+          <div className="flex justify-between text-xs mb-1.5">
+            <span className="text-gray-500">
+              {formatCurrency(totalCashCollected)} collected · Day {targetStats.daysPassed} of {targetStats.totalDays}
+            </span>
+            <span className={targetStats.onTrack ? 'text-green-400 font-semibold' : 'text-amber-400 font-semibold'}>
+              {Math.round((totalCashCollected / monthlyTarget) * 100)}%
+            </span>
+          </div>
+          <div className="h-3 bg-gray-800 rounded-full overflow-hidden relative">
+            {/* Where you should be line */}
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-gray-500 z-10"
+              style={{ left: `${(targetStats.daysPassed / targetStats.totalDays) * 100}%` }}
+              title={`Day ${targetStats.daysPassed} pace marker`}
+            />
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${targetStats.onTrack ? 'bg-green-400' : 'bg-amber-400'}`}
+              style={{ width: `${Math.min(100, (totalCashCollected / monthlyTarget) * 100)}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+            <span>£0</span>
+            <span>{formatCurrency(monthlyTarget)}</span>
+          </div>
+        </div>
+
+        {/* Stats grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <div className="bg-brand-dark rounded-lg p-3">
+            <p className="text-xs text-gray-500">Daily Run Rate</p>
+            <p className="text-sm font-semibold text-brand-cyan">{formatCurrency(targetStats.runRate)}/day</p>
+          </div>
+          <div className="bg-brand-dark rounded-lg p-3">
+            <p className="text-xs text-gray-500">Still Needed</p>
+            <p className="text-sm font-semibold text-amber-400">{formatCurrency(targetStats.remaining)}</p>
+          </div>
+          <div className="bg-brand-dark rounded-lg p-3">
+            <p className="text-xs text-gray-500">PP Due This Month</p>
+            <p className="text-sm font-semibold text-green-400">{formatCurrency(targetStats.ppExpected)}</p>
+          </div>
+          <div className="bg-brand-dark rounded-lg p-3">
+            <p className="text-xs text-gray-500">Required Daily</p>
+            <p className="text-sm font-semibold text-red-400">{formatCurrency(targetStats.requiredDaily)}/day</p>
+            <p className="text-[10px] text-gray-600">new deals needed (after PP)</p>
+          </div>
+        </div>
+
+        {/* Projection breakdown */}
+        <div className="bg-brand-dark rounded-lg p-4">
+          <h4 className="text-xs text-gray-500 font-medium mb-3">Projection to Month End</h4>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Collected so far</span>
+              <span className="font-semibold">{formatCurrency(totalCashCollected)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">+ PP payments expected</span>
+              <span className="font-semibold text-green-400">+{formatCurrency(targetStats.ppExpected)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">
+                + Projected new deals
+                <span className="text-[10px] text-gray-600 ml-1">
+                  ({Math.round(targetStats.showRate * 100)}% show × {Math.round(targetStats.closeRate * 100)}% close × {formatCurrency(targetStats.avgDealSize)} avg)
+                </span>
+              </span>
+              <span className="font-semibold text-brand-cyan">+{formatCurrency(targetStats.projectedNewDeals)}</span>
+            </div>
+            <div className="border-t border-gray-800 pt-2 flex justify-between text-sm">
+              <span className="text-gray-300 font-medium">Projected total</span>
+              <span className={`font-bold ${targetStats.onTrack ? 'text-green-400' : 'text-red-400'}`}>
+                {formatCurrency(targetStats.totalProjected)}
+                {targetStats.onTrack
+                  ? <span className="text-xs ml-1">on track</span>
+                  : <span className="text-xs ml-1">({formatCurrency(monthlyTarget - targetStats.totalProjected)} short)</span>
+                }
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Weekly revenue chart */}
