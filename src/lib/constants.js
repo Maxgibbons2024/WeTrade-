@@ -9,7 +9,7 @@ export const CLOSERS = [
 
 export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite'];
 
-export const DEAL_STATUSES = ['onboarding', 'active', 'follow_up', 'lost'];
+export const DEAL_STATUSES = ['onboarding', 'active', 'follow_up', 'lost', 'cancelled'];
 
 export const PAYMENT_METHODS = ['stripe', 'paypal', 'bank_transfer', 'mamo'];
 
@@ -46,6 +46,7 @@ export const STATUS_COLOURS = {
   onboarding: '#27CCE7',
   follow_up: '#F59E0B',
   lost: '#EF4444',
+  cancelled: '#EF4444',
 };
 
 export function formatCurrency(value) {

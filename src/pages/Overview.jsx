@@ -78,6 +78,30 @@ export default function Overview() {
   const compareDeals = useMemo(() => compareRange ? salesDeals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [salesDeals, compareRange]);
   const compareCollected = compareDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
 
+  // Cancellations in the date range
+  const cancellations = useMemo(() => {
+    return salesDeals.filter((d) => {
+      if (d.status !== 'cancelled') return false;
+      // Use cancelled_at if set, otherwise fall back to updated_at or created_at
+      const cancelDate = d.cancelled_at || d.updated_at || d.created_at;
+      return isInDateRange(cancelDate, dateRange.start, dateRange.end);
+    });
+  }, [salesDeals, dateRange]);
+
+  const cancellationStats = useMemo(() => {
+    let lostMonthly = 0;
+    let lostRemaining = 0;
+    const details = cancellations.map((d) => {
+      const plan = paymentPlans?.find((p) => p.deal_id === d.id || (p.client_name && d.client_name && p.client_name.toLowerCase() === d.client_name.toLowerCase()));
+      const monthly = Number(d.monthly_amount || 0);
+      const remaining = plan ? Number(plan.total_value || 0) - Number(plan.total_collected || 0) : 0;
+      lostMonthly += monthly;
+      lostRemaining += remaining;
+      return { deal: d, plan, monthly, remaining };
+    });
+    return { count: cancellations.length, lostMonthly, lostRemaining, details };
+  }, [cancellations, paymentPlans]);
+
   // Overdue payments (always current, not filtered by date)
   const overduePayments = useMemo(() => paymentPlans.filter((p) => p.status === 'overdue'), [paymentPlans]);
 
@@ -249,7 +273,7 @@ export default function Overview() {
       )}
 
       {/* Metric cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         <MetricCard
           title="Cash Collected"
           value={formatCurrency(totalCashCollected)}
@@ -281,6 +305,12 @@ export default function Overview() {
           value={overduePayments.length}
           danger={overduePayments.length > 0}
           subtitle={overduePayments.length > 0 ? `${formatCurrency(overduePayments.reduce((s, p) => s + Number(p.monthly_amount), 0))} outstanding` : 'All clear'}
+        />
+        <MetricCard
+          title="Cancellations"
+          value={cancellationStats.count}
+          danger={cancellationStats.count > 0}
+          subtitle={cancellationStats.count > 0 ? `${formatCurrency(cancellationStats.lostRemaining)} lost` : 'None'}
         />
       </div>
 
@@ -329,6 +359,41 @@ export default function Overview() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Cancellations / Lost Revenue */}
+        {cancellationStats.count > 0 && (
+          <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-red-400">Cancellations</h3>
+              <span className="text-lg font-bold text-red-400">{formatCurrency(cancellationStats.lostRemaining)}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-brand-dark rounded-lg p-3">
+                <p className="text-xs text-gray-500">Lost Monthly</p>
+                <p className="text-sm font-semibold text-red-400">{formatCurrency(cancellationStats.lostMonthly)}/mo</p>
+              </div>
+              <div className="bg-brand-dark rounded-lg p-3">
+                <p className="text-xs text-gray-500">Lost Remaining</p>
+                <p className="text-sm font-semibold text-red-400">{formatCurrency(cancellationStats.lostRemaining)}</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {cancellationStats.details.map(({ deal, monthly, remaining }) => (
+                <div key={deal.id} className="flex items-center gap-3 p-2 rounded-lg bg-white/[0.02]">
+                  <CloserAvatar closerId={deal.closer_id} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{deal.client_name}</p>
+                    <p className="text-xs text-gray-500">{deal.closer_name} · {deal.programme}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-red-400">{formatCurrency(remaining)}</p>
+                    {monthly > 0 && <p className="text-[10px] text-gray-500">{formatCurrency(monthly)}/mo lost</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

@@ -36,6 +36,7 @@ const EMPTY_FORM = {
   call_booked_at: '',
   notes: '',
   status: 'active',
+  cancelled_at: '',
 };
 
 export default function Deals() {
@@ -313,6 +314,7 @@ export default function Deals() {
       notes: deal.notes || '',
       status: deal.status || 'active',
       created_at: deal.created_at ? deal.created_at.slice(0, 10) : '',
+      cancelled_at: deal.cancelled_at ? deal.cancelled_at.slice(0, 10) : '',
     });
     setShowForm(true);
   }
@@ -335,7 +337,7 @@ export default function Deals() {
     }
     setSubmitting(true);
     try {
-      const { total_paid, total_deal_size, created_at, ...dealFields } = form;
+      const { total_paid, total_deal_size, created_at, cancelled_at, ...dealFields } = form;
       const payload = {
         ...dealFields,
         front_end: Number(dealFields.front_end),
@@ -344,6 +346,7 @@ export default function Deals() {
         onboarding_assigned_to: dealFields.onboarding_assigned_to || null,
         call_booked_at: dealFields.call_booked_at ? new Date(dealFields.call_booked_at).toISOString() : null,
         notes: dealFields.notes || null,
+        cancelled_at: dealFields.status === 'cancelled' && cancelled_at ? new Date(cancelled_at).toISOString() : null,
       };
       if (created_at) payload.created_at = new Date(created_at).toISOString();
       if (editingDeal) {
@@ -734,6 +737,18 @@ export default function Deals() {
               {DEAL_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
             </select>
           </div>
+          {form.status === 'cancelled' && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Cancelled Date</label>
+              <input
+                name="cancelled_at"
+                type="date"
+                value={form.cancelled_at || ''}
+                onChange={handleFormChange}
+                className="w-full bg-brand-dark border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400 focus:outline-none focus:border-red-500"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Onboarding Date</label>
             <input name="onboarding_date" type="datetime-local" value={form.onboarding_date} onChange={handleFormChange} className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan" />
