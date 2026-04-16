@@ -11,6 +11,7 @@ import Fathom from './pages/Fathom';
 import Community from './pages/Community';
 import ManualEntry from './pages/ManualEntry';
 import Calculator from './pages/Calculator';
+import Ads from './pages/Ads';
 
 const PAGES = {
   overview: Overview,
@@ -18,6 +19,7 @@ const PAGES = {
   setters: Setters,
   deals: Deals,
   sources: Sources,
+  ads: Ads,
   community: Community,
   payments: PaymentPlans,
   fathom: Fathom,

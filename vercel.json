@@ -13,6 +13,10 @@
     {
       "path": "/api/iclosed/sync",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/segmetrics/sync",
+      "schedule": "0 6 * * *"
     }
   ]
 }
