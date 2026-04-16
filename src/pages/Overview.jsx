@@ -79,13 +79,15 @@ export default function Overview() {
     // Gap to target
     const remaining = Math.max(0, monthlyTarget - totalCashCollected);
 
-    // PP payments expected rest of month
+    // PP payments expected this month — include overdue plans from earlier
+    // in the month that haven't been paid yet (next_due_date not bumped)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const ppExpected = (paymentPlans || [])
       .filter((p) => p.status === 'active' || p.status === 'due_soon' || p.status === 'overdue')
       .filter((p) => {
         if (!p.next_due_date) return false;
         const due = new Date(p.next_due_date);
-        return due >= now && due <= monthEnd;
+        return due >= monthStart && due <= monthEnd;
       })
       .reduce((sum, p) => sum + Number(p.monthly_amount || 0), 0);
 
@@ -101,10 +103,10 @@ export default function Overview() {
     const showRate = aggScheduled > 0 ? aggLive / aggScheduled : 0;
 
     // --- Method 1: Cash-Based Projection ---
-    // Use newDeals (£999+) for deal count / avg — sub-£999 are event tickets
+    // Deal count uses newDeals (£999+) to exclude event tickets,
+    // but avg deal size uses total FE so all collected cash is attributed
     const dealsCount = newDeals.length;
-    const newDealsFE = newDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
-    const avgDealSize = dealsCount > 0 ? newDealsFE / dealsCount : 0;
+    const avgDealSize = dealsCount > 0 ? frontEndCollected / dealsCount : 0;
     const dealsPerDay = daysPassed > 0 ? dealsCount / daysPassed : 0;
     const projectedNewDeals = dealsPerDay * daysRemaining;
     const cashProjectionAdditional = projectedNewDeals * avgDealSize + ppExpected;
@@ -163,7 +165,7 @@ export default function Overview() {
       requiredBookingsPerDay, currentBookingsPerDay, paceRatio,
       callsNeededBooked: Math.round(callsNeededBooked),
     };
-  }, [totalCashCollected, monthlyTarget, paymentPlans, iclosedByCloser, newDeals]);
+  }, [totalCashCollected, frontEndCollected, monthlyTarget, paymentPlans, iclosedByCloser, newDeals]);
 
   // iClosed call stats (aggregated across all closers in the date range)
   const callStats = useMemo(() => {
