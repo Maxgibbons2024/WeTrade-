@@ -24,6 +24,7 @@ import useDateRange from '../hooks/useDateRange';
 
 const EMPTY_FORM = {
   client_name: '',
+  email: '',
   closer_id: 'lloyd',
   closer_name: 'Lloyd',
   front_end: '',
@@ -304,6 +305,19 @@ export default function Deals() {
       },
     },
     { key: 'status', label: 'Status', render: (val) => <StatusBadge status={val} /> },
+    {
+      key: 'utm_campaign',
+      label: 'Attribution',
+      render: (val, row) => val ? (
+        <span className="text-[10px] font-medium px-2 py-0.5 rounded border bg-green-500/10 text-green-400 border-green-500/30 truncate max-w-[140px] block" title={val}>
+          {val}
+        </span>
+      ) : (
+        <span className="text-[10px] font-medium px-2 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/30">
+          {row.email ? 'Pending' : 'No email'}
+        </span>
+      ),
+    },
   ];
 
   function handleFormChange(e) {
@@ -323,6 +337,7 @@ export default function Deals() {
     const plan = paymentPlans.find((p) => p.deal_id === deal.id);
     setForm({
       client_name: deal.client_name || '',
+      email: deal.email || '',
       closer_id: deal.closer_id || 'lloyd',
       closer_name: deal.closer_name || 'Lloyd',
       front_end: deal.front_end ?? '',
@@ -361,9 +376,10 @@ export default function Deals() {
     }
     setSubmitting(true);
     try {
-      const { total_paid, total_deal_size, created_at, cancelled_at, ...dealFields } = form;
+      const { total_paid, total_deal_size, created_at, cancelled_at, email, ...dealFields } = form;
       const payload = {
         ...dealFields,
+        email: email?.trim() || null,
         front_end: Number(dealFields.front_end),
         monthly_amount: Number(dealFields.monthly_amount) || 0,
         onboarding_date: dealFields.onboarding_date || null,
@@ -958,6 +974,19 @@ export default function Deals() {
                 )}
               </div>
 
+              {/* Attribution */}
+              <div className={`rounded-lg p-3 ${deal.utm_campaign ? 'bg-green-500/5 border border-green-500/20' : 'bg-amber-500/5 border border-amber-500/20'}`}>
+                <p className="text-xs text-gray-500 mb-1">Ad Attribution</p>
+                {deal.utm_campaign ? (
+                  <div>
+                    <p className="text-sm font-medium text-green-400">{deal.utm_campaign}</p>
+                    {deal.utm_source && <p className="text-xs text-gray-500">Source: {deal.utm_source}{deal.utm_medium ? ` / ${deal.utm_medium}` : ''}</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-amber-400">{deal.email ? 'Pending — re-run attribution sync' : 'No email — add one to enable attribution'}</p>
+                )}
+              </div>
+
               {/* Additional info */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-brand-dark rounded-lg p-3">
@@ -969,6 +998,12 @@ export default function Deals() {
                   <p className="text-sm font-medium capitalize">{deal.payment_method?.replace('_', ' ')}</p>
                 </div>
               </div>
+              {deal.email && (
+                <div className="bg-brand-dark rounded-lg p-3">
+                  <p className="text-xs text-gray-500">Email</p>
+                  <p className="text-sm font-medium">{deal.email}</p>
+                </div>
+              )}
               {deal.onboarding_date && (
                 <div className="bg-brand-dark rounded-lg p-3">
                   <p className="text-xs text-gray-500">Onboarding</p>
@@ -989,6 +1024,23 @@ export default function Deals() {
       {/* Add / edit deal slide-over form */}
       <SlideOver open={showForm} onClose={closeForm} title={editingDeal ? `Edit Deal — ${editingDeal.client_name}` : 'Add New Deal'}>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Attribution status */}
+          {editingDeal && (
+            <div className={`rounded-lg p-3 flex items-center gap-3 ${editingDeal.utm_campaign ? 'bg-green-500/5 border border-green-500/20' : 'bg-amber-500/5 border border-amber-500/20'}`}>
+              <span className={`text-xs font-medium ${editingDeal.utm_campaign ? 'text-green-400' : 'text-amber-400'}`}>
+                {editingDeal.utm_campaign ? 'Attributed' : 'Not Attributed'}
+              </span>
+              {editingDeal.utm_campaign ? (
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-300 truncate">{editingDeal.utm_campaign}</p>
+                  {editingDeal.utm_source && <p className="text-[10px] text-gray-500">Source: {editingDeal.utm_source}{editingDeal.utm_medium ? ` / ${editingDeal.utm_medium}` : ''}</p>}
+                </div>
+              ) : (
+                <p className="text-[10px] text-gray-500 flex-1">{editingDeal.email ? 'Has email — re-run attribution sync to match' : 'Add email below to enable attribution'}</p>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs text-gray-500 mb-1">Client Name *</label>
             <input
@@ -998,6 +1050,20 @@ export default function Deals() {
               required
               className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
             />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Email</label>
+            <input
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={handleFormChange}
+              placeholder="client@email.com — needed for ad attribution"
+              className="w-full bg-brand-dark border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+            />
+            {!form.email && editingDeal && !editingDeal.utm_campaign && (
+              <p className="text-[10px] text-amber-400 mt-1">Add the client's email to link this deal to an ad campaign</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
