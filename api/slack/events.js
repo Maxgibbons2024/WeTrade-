@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
-import { matchCloserByName, addMonths } from './_lib/closers.js';
+import { matchCloserByName, addMonths } from '../_lib/closers.js';
 
 export const config = { api: { bodyParser: false } };
 
