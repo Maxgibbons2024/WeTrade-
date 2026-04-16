@@ -147,5 +147,22 @@ export default function useIclosedStats(dateRange) {
       .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
   }, [allCalls]);
 
-  return { calls, byCloser, daily, upcomingToday, upcomingThisMonth, loading, error, refetch };
+  // Average calls booked per day over the last 7 days — used for projections
+  const recentCallsPerDay = useMemo(() => {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+    const nowMs = now.getTime();
+    const startMs = sevenDaysAgo.getTime();
+    const last7 = (allCalls || []).filter((c) => {
+      if (isCancelled(c)) return false;
+      if (!c.scheduled_at) return false;
+      const t = new Date(c.scheduled_at).getTime();
+      return t >= startMs && t <= nowMs;
+    });
+    return last7.length / 7;
+  }, [allCalls]);
+
+  return { calls, byCloser, daily, upcomingToday, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
 }
