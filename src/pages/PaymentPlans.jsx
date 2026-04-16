@@ -8,7 +8,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import SlideOver from '../components/SlideOver';
-import { useQuery, useRealtime, updateRow, insertRow } from '../hooks/useSupabase';
+import { useQuery, useRealtime, updateRow, insertRow, deleteRow } from '../hooks/useSupabase';
 import { formatCurrency, formatDate, isInDateRange, CLOSERS } from '../lib/constants';
 import useDateRange from '../hooks/useDateRange';
 
@@ -677,6 +677,27 @@ export default function PaymentPlans() {
           </div>
           <button type="submit" disabled={savingPlan} className="w-full bg-brand-cyan text-white py-2.5 rounded-lg font-medium text-sm hover:bg-brand-mid transition-colors disabled:opacity-50">
             {savingPlan ? 'Saving...' : 'Update Plan'}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm(`Delete payment plan for ${editingPlan.client_name}? This cannot be undone.`)) return;
+              setSavingPlan(true);
+              try {
+                await deleteRow('payment_plans', editingPlan.id);
+                toast.success('Payment plan deleted');
+                setEditingPlan(null);
+                refetch();
+              } catch (err) {
+                toast.error(`Failed: ${err.message}`);
+              } finally {
+                setSavingPlan(false);
+              }
+            }}
+            disabled={savingPlan}
+            className="w-full bg-red-500/10 text-red-400 py-2.5 rounded-lg font-medium text-sm hover:bg-red-500/20 transition-colors disabled:opacity-50 border border-red-500/30"
+          >
+            Delete Plan
           </button>
         </form>
       </SlideOver>
