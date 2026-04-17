@@ -85,10 +85,17 @@ export default async function handler(req, res) {
     // SegMetrics table rows are campaign-level aggregates for the date range,
     // so fetching one day at a time gives us daily granularity.
     const allRows = [];
+    const dailyTotals = []; // KPI totals per day — needed for impressions (not in per-campaign table)
     const cursor = new Date(since);
     const end = new Date(until);
     let daysProcessed = 0;
     let apiErrors = 0;
+
+    // Helper to extract a KPI value from the kpis array by key
+    const kpiVal = (kpis, key) => {
+      const hit = (kpis || []).find((k) => k.key === key);
+      return hit ? Number(hit.value || 0) : 0;
+    };
 
     while (cursor <= end) {
       const dateStr = cursor.toISOString().split('T')[0];
@@ -98,6 +105,18 @@ export default async function handler(req, res) {
         // fetchDay returned [] on error
         apiErrors++;
       } else {
+        // Capture daily KPI totals (impressions only lives here, not in table rows)
+        if (result.kpis && result.kpis.length > 0) {
+          dailyTotals.push({
+            date: dateStr,
+            impressions: Math.round(kpiVal(result.kpis, 'adImpressions')),
+            spend: Math.round(kpiVal(result.kpis, 'adSpend') * 100) / 100,
+            clicks: Math.round(kpiVal(result.kpis, 'adClicks')),
+            leads: Math.round(kpiVal(result.kpis, 'leads')),
+            revenue: Math.round(kpiVal(result.kpis, 'revenue') * 100) / 100,
+            synced_at: new Date().toISOString(),
+          });
+        }
         for (const row of result.rows) {
           const campaignName = row.ad_campaign || '';
           if (!campaignName) continue;
@@ -167,7 +186,7 @@ export default async function handler(req, res) {
     }
     const dedupedRows = Array.from(seen.values());
 
-    // Upsert in batches
+    // Upsert campaign rows in batches
     let upserted = 0;
     const errors = [];
     for (let i = 0; i < dedupedRows.length; i += 500) {
@@ -183,6 +202,23 @@ export default async function handler(req, res) {
       }
     }
 
+    // Upsert daily totals (impressions etc. — account-wide KPIs)
+    let dailyUpserted = 0;
+    if (dailyTotals.length > 0) {
+      for (let i = 0; i < dailyTotals.length; i += 500) {
+        const batch = dailyTotals.slice(i, i + 500);
+        const { error } = await supabase
+          .from('segmetrics_daily')
+          .upsert(batch, { onConflict: 'date' });
+        if (error) {
+          console.error('[segmetrics/sync] Daily upsert error:', error.message);
+          errors.push(`daily: ${error.message}`);
+        } else {
+          dailyUpserted += batch.length;
+        }
+      }
+    }
+
     return res.status(200).json({
       ok: true,
       since,
@@ -192,6 +228,7 @@ export default async function handler(req, res) {
       fetched: allRows.length,
       deduped: dedupedRows.length,
       upserted,
+      dailyUpserted,
       errors: errors.length ? errors : undefined,
     });
   } catch (err) {

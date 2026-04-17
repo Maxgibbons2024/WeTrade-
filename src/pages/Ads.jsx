@@ -43,6 +43,34 @@ function roasBg(roas) {
   return 'bg-red-400';
 }
 
+// Tiny inline SVG sparkline — no chart library overhead for small visuals
+function Sparkline({ values, color = '#27CCE7', width = 120, height = 32 }) {
+  if (!values || values.length === 0) return null;
+  const max = Math.max(...values, 0.01);
+  const step = values.length > 1 ? width / (values.length - 1) : 0;
+  const points = values
+    .map((v, i) => `${i * step},${height - (v / max) * height}`)
+    .join(' ');
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+      {/* Fill under the line */}
+      <polyline
+        fill={`${color}22`}
+        stroke="none"
+        points={`0,${height} ${points} ${width},${height}`}
+      />
+    </svg>
+  );
+}
+
 export default function Ads() {
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
   const [timeView, setTimeView] = useState('daily');
@@ -54,17 +82,26 @@ export default function Ads() {
   const { data: adData, loading: adLoading, error: adError } = useQuery('segmetrics_ads', {
     order: { column: 'date', ascending: false },
   });
+  const { data: dailyTotals, loading: dailyLoading } = useQuery('segmetrics_daily', {
+    order: { column: 'date', ascending: false },
+  });
   const { data: deals, loading: dealsLoading } = useQuery('deals');
   const { data: receipts, loading: receiptsLoading } = useQuery('payment_receipts');
   const { data: plans, loading: plansLoading } = useQuery('payment_plans');
 
-  const loading = adLoading || dealsLoading || receiptsLoading || plansLoading;
+  const loading = adLoading || dailyLoading || dealsLoading || receiptsLoading || plansLoading;
   const error = adError;
 
   // Filter ad data by date range
   const rangeAds = useMemo(
     () => adData.filter((a) => isInDateRange(a.date, dateRange.start, dateRange.end)),
     [adData, dateRange]
+  );
+
+  // Filter daily totals by date range — used for impressions (not available per-campaign)
+  const rangeDaily = useMemo(
+    () => (dailyTotals || []).filter((d) => isInDateRange(d.date, dateRange.start, dateRange.end)),
+    [dailyTotals, dateRange]
   );
 
   // Filter deals by date range
@@ -117,13 +154,18 @@ export default function Ads() {
 
   // ---- KPI Totals ----
   const totals = useMemo(() => {
-    let spend = 0, clicks = 0, impressions = 0, leads = 0, revenue = 0;
+    let spend = 0, clicks = 0, leads = 0, revenue = 0;
     for (const a of rangeAds) {
       spend += Number(a.spend || 0);
       clicks += Number(a.clicks || 0);
-      impressions += Number(a.impressions || 0);
       leads += Number(a.leads || 0);
       revenue += Number(a.revenue || 0);
+    }
+    // Impressions come from account-wide daily KPI totals,
+    // not per-campaign (SegMetrics doesn't break impressions down per campaign)
+    let impressions = 0;
+    for (const d of rangeDaily) {
+      impressions += Number(d.impressions || 0);
     }
     let realCash = 0;
     for (const entry of Object.values(cashByCampaign)) {
@@ -134,7 +176,7 @@ export default function Ads() {
     const realRoas = spend > 0 ? realCash / spend : 0;
     const segRoas = spend > 0 ? revenue / spend : 0;
     return { spend, clicks, impressions, leads, revenue, realCash, cpc, cpl, realRoas, segRoas };
-  }, [rangeAds, cashByCampaign]);
+  }, [rangeAds, rangeDaily, cashByCampaign]);
 
   // ---- Campaign-level aggregation ----
   const campaignStats = useMemo(() => {
@@ -315,6 +357,48 @@ export default function Ads() {
     return { best: sorted.slice(0, 3), worst: sorted.slice(-3).reverse() };
   }, [campaignStats]);
 
+  // ---- Top Performing Ads widget: best campaigns with attributed cash ----
+  // Filters out campaigns with no spend or no deals closed — only shows ones
+  // that actually earned money so the widget surfaces real winners.
+  const topPerformers = useMemo(() => {
+    return campaignStats
+      .filter((c) => c.spend > 0 && c.dealCount > 0)
+      .sort((a, b) => b.realRoas - a.realRoas)
+      .slice(0, 6);
+  }, [campaignStats]);
+
+  // ---- Needs Attention: high spend, low/no cash ----
+  // Spend in top 50% of campaigns, but zero deals and zero real cash —
+  // i.e. burning budget without converting.
+  const needsAttention = useMemo(() => {
+    if (campaignStats.length === 0) return [];
+    const sortedBySpend = [...campaignStats].filter((c) => c.spend > 0).sort((a, b) => b.spend - a.spend);
+    if (sortedBySpend.length === 0) return [];
+    const medianSpend = sortedBySpend[Math.floor(sortedBySpend.length / 2)]?.spend || 0;
+    return sortedBySpend
+      .filter((c) => c.spend >= medianSpend && c.dealCount === 0 && c.realCash === 0)
+      .slice(0, 5);
+  }, [campaignStats]);
+
+  // ---- Daily spend per campaign (for sparklines) ----
+  const dailySpendByCampaign = useMemo(() => {
+    const map = {};
+    for (const a of rangeAds) {
+      const key = a.campaign_id || a.campaign_name || 'Unknown';
+      if (!map[key]) map[key] = {};
+      map[key][a.date] = (map[key][a.date] || 0) + Number(a.spend || 0);
+    }
+    // Build sorted date arrays per campaign
+    const result = {};
+    const dateSet = new Set();
+    for (const a of rangeAds) dateSet.add(a.date);
+    const allDates = Array.from(dateSet).sort();
+    for (const [key, byDate] of Object.entries(map)) {
+      result[key] = allDates.map((d) => byDate[d] || 0);
+    }
+    return result;
+  }, [rangeAds]);
+
   // ---- Unattributed deals ----
   const unattributedDeals = useMemo(
     () => rangeDeals.filter((d) => !d.utm_campaign || !(d.utm_campaign.toLowerCase().trim())),
@@ -378,6 +462,91 @@ export default function Ads() {
           danger={totals.realRoas < 2 && totals.spend > 0}
         />
       </div>
+
+      {/* Top Performing Ads widget */}
+      {topPerformers.length > 0 && (
+        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-400">Top Performing Ads</h3>
+            <span className="text-xs text-gray-500">Ranked by Real ROAS</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {topPerformers.map((campaign, i) => {
+              const key = campaign.campaign_id || campaign.campaign_name;
+              const sparkline = dailySpendByCampaign[key] || [];
+              return (
+                <button
+                  key={key || i}
+                  onClick={() => handleCampaignClick(campaign)}
+                  className="text-left bg-brand-dark hover:bg-brand-dark/80 border border-gray-800 hover:border-brand-cyan/40 rounded-lg p-4 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-lg font-bold ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-700' : 'text-gray-500'}`}>#{i + 1}</span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${roasColor(campaign.realRoas)} bg-white/5`}>
+                          {campaign.realRoas.toFixed(1)}x
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium truncate" title={campaign.campaign_name}>{campaign.campaign_name}</p>
+                    </div>
+                  </div>
+                  <div className="h-8 mb-2">
+                    <Sparkline values={sparkline} color={campaign.realRoas >= 3 ? '#10B981' : campaign.realRoas >= 2 ? '#F59E0B' : '#EF4444'} width={220} height={32} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-[10px]">
+                    <div>
+                      <p className="text-gray-500">Spend</p>
+                      <p className="text-white font-semibold">{formatCurrency(campaign.spend)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Cash</p>
+                      <p className="text-green-400 font-semibold">{formatCurrency(campaign.realCash)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Deals</p>
+                      <p className="text-white font-semibold">{campaign.dealCount}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Needs Attention widget — high spend, no attributed cash */}
+      {needsAttention.length > 0 && (
+        <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-medium text-red-400">Needs Attention</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">High spend, zero attributed cash — consider pausing or reviewing attribution</p>
+            </div>
+            <span className="text-xs text-red-400 font-semibold">
+              {formatCurrency(needsAttention.reduce((s, c) => s + c.spend, 0))} burning
+            </span>
+          </div>
+          <div className="space-y-2">
+            {needsAttention.map((campaign) => (
+              <button
+                key={campaign.campaign_id || campaign.campaign_name}
+                onClick={() => handleCampaignClick(campaign)}
+                className="w-full flex items-center gap-3 p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] border border-red-500/10 hover:border-red-500/30 transition-colors text-left"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{campaign.campaign_name}</p>
+                  <p className="text-[10px] text-gray-500">{formatNum(campaign.clicks)} clicks · {formatNum(campaign.leads)} leads · 0 deals</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-red-400">{formatCurrency(campaign.spend)}</p>
+                  <p className="text-[10px] text-gray-600">no cash</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Time Period Tabs + Chart */}
       <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
