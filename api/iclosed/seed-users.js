@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
-import { iclosedListAll, pick } from '../_lib/iclosed.js';
+import { iclosedListAll, iclosedFetch, pick } from '../_lib/iclosed.js';
 import { resolveInternal } from '../_lib/closers.js';
 
 export default async function handler(req, res) {
@@ -16,6 +16,47 @@ export default async function handler(req, res) {
   }
   if (!process.env.ICLOSED_API_KEY) {
     return res.status(500).json({ error: 'Missing ICLOSED_API_KEY environment variable' });
+  }
+
+  // Debug mode — dumps raw /v1/users response so we can see what iClosed
+  // is actually returning. Hit /api/iclosed/seed-users?key=...&debug=1
+  if (req.query?.debug === '1') {
+    try {
+      const raw = await iclosedFetch('/v1/users?limit=100');
+      // Try common pagination variants in case the first didn't return anything
+      const rawOffset = await iclosedFetch('/v1/users?limit=100&offset=0').catch((e) => ({ error: e.message }));
+      const rawPage = await iclosedFetch('/v1/users?limit=100&page=1').catch((e) => ({ error: e.message }));
+
+      const summarise = (r) => {
+        if (!r || typeof r !== 'object') return { type: typeof r, value: r };
+        const keys = Object.keys(r);
+        const dataKeys = r.data && typeof r.data === 'object' ? Object.keys(r.data) : null;
+        const inferredUsers = (() => {
+          if (Array.isArray(r)) return r;
+          if (Array.isArray(r.users)) return r.users;
+          if (Array.isArray(r.items)) return r.items;
+          if (Array.isArray(r.data)) return r.data;
+          if (r.data?.users && Array.isArray(r.data.users)) return r.data.users;
+          if (r.data?.items && Array.isArray(r.data.items)) return r.data.items;
+          return null;
+        })();
+        return {
+          topLevelKeys: keys,
+          dataKeys,
+          inferredUserCount: inferredUsers ? inferredUsers.length : null,
+          sampleUser: inferredUsers?.[0] ?? null,
+          rawTruncated: JSON.stringify(r).slice(0, 1500),
+        };
+      };
+
+      return res.status(200).json({
+        base:   summarise(raw),
+        offset: summarise(rawOffset),
+        page:   summarise(rawPage),
+      });
+    } catch (err) {
+      return res.status(500).json({ error: err.message, stack: err.stack });
+    }
   }
 
   try {
