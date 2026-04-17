@@ -32,26 +32,27 @@ export default async function handler(req, res) {
   const since = req.query?.since || yesterday.toISOString().split('T')[0];
   const until = req.query?.until || since;
   const reportId = req.query?.report_id || '';
+  const bt = req.query?.bt || '';
 
   const dateRange = `start=${since}&end=${until}`;
   const probes = [
-    // Dimension/group_by query params
-    `/${accountId}/report/ads?${dateRange}&dimension=ad`,
-    `/${accountId}/report/ads?${dateRange}&dimension=adset`,
-    `/${accountId}/report/ads?${dateRange}&group_by=ad`,
-    `/${accountId}/report/ads?${dateRange}&groupBy=ad`,
-    `/${accountId}/report/ads?${dateRange}&level=ad`,
-    `/${accountId}/report/ads?${dateRange}&breakdown=ad`,
-    `/${accountId}/report/ads?${dateRange}&by=ad`,
-    // Nested paths
-    `/${accountId}/report/ads/ad?${dateRange}`,
-    `/${accountId}/report/ads/adset?${dateRange}`,
-    `/${accountId}/report/ads/by-ad?${dateRange}`,
-    `/${accountId}/ads?${dateRange}`,
-    `/${accountId}/adsets?${dateRange}`,
-    `/${accountId}/campaigns?${dateRange}`,
-    // If user supplied a saved report id
+    // Try the "bt" board-token from the UI URL as report_id / dimension_id
+    ...(bt ? [
+      `/${accountId}/report/ads/${bt}?${dateRange}`,
+      `/${accountId}/report/ads?${dateRange}&bt=${bt}`,
+      `/${accountId}/report/ads?${dateRange}&board=${bt}`,
+      `/${accountId}/board/${bt}?${dateRange}`,
+      `/${accountId}/advertising/${bt}?${dateRange}`,
+    ] : []),
+    // If user supplied an explicit report id
     ...(reportId ? [`/${accountId}/report/ads/${reportId}?${dateRange}`] : []),
+    // Dimension/group_by query params (control group — already known campaign-level)
+    `/${accountId}/report/ads?${dateRange}&dimension=ad_name`,
+    `/${accountId}/report/ads?${dateRange}&tab=ad`,
+    `/${accountId}/report/ads?${dateRange}&view=ad`,
+    // Nested paths on /overview
+    `/${accountId}/overview/advertising?${dateRange}`,
+    `/${accountId}/overview/advertising/ads?${dateRange}`,
   ];
 
   const results = [];
