@@ -256,31 +256,39 @@ export default function Ads() {
   }, [rangeAds, selectedAdSet, selectedCampaign, cashByCampaign]);
 
   // ---- Time-series aggregation ----
+  // Bucket a date string into daily / weekly (Mon-start) / monthly key
+  const bucketKey = (dateStr) => {
+    if (timeView === 'daily') return dateStr;
+    if (timeView === 'weekly') {
+      const d = new Date(dateStr);
+      const day = d.getDay();
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((day + 6) % 7));
+      return monday.toISOString().split('T')[0];
+    }
+    return dateStr?.substring(0, 7); // YYYY-MM
+  };
+
   const timeSeriesData = useMemo(() => {
     const groups = {};
+    // Aggregate per-campaign spend/clicks/leads/revenue (impressions not available here)
     for (const a of rangeAds) {
-      let key;
-      if (timeView === 'daily') {
-        key = a.date;
-      } else if (timeView === 'weekly') {
-        const d = new Date(a.date);
-        const day = d.getDay();
-        const monday = new Date(d);
-        monday.setDate(d.getDate() - ((day + 6) % 7));
-        key = monday.toISOString().split('T')[0];
-      } else {
-        key = a.date?.substring(0, 7); // YYYY-MM
-      }
+      const key = bucketKey(a.date);
       if (!groups[key]) groups[key] = { spend: 0, clicks: 0, impressions: 0, leads: 0, revenue: 0, realCash: 0 };
       groups[key].spend += Number(a.spend || 0);
       groups[key].clicks += Number(a.clicks || 0);
-      groups[key].impressions += Number(a.impressions || 0);
       groups[key].leads += Number(a.leads || 0);
       groups[key].revenue += Number(a.revenue || 0);
     }
+    // Impressions live in segmetrics_daily (account-wide KPI). Merge them in.
+    for (const d of rangeDaily) {
+      const key = bucketKey(d.date);
+      if (!groups[key]) groups[key] = { spend: 0, clicks: 0, impressions: 0, leads: 0, revenue: 0, realCash: 0 };
+      groups[key].impressions += Number(d.impressions || 0);
+    }
     const sorted = Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
     return sorted.map(([label, data]) => ({ label, ...data, roas: data.spend > 0 ? data.revenue / data.spend : 0 }));
-  }, [rangeAds, timeView]);
+  }, [rangeAds, rangeDaily, timeView]);
 
   // ---- Chart data ----
   const chartData = useMemo(() => {
