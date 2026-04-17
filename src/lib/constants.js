@@ -9,6 +9,12 @@ export const CLOSERS = [
 ];
 export const ACTIVE_CLOSERS = CLOSERS.filter((c) => c.active);
 
+// iClosed call data before this date is unreliable — closers weren't
+// consistently marking task.completed, so statuses are mostly NO_SHOW or
+// BOOKED with no SHOWED/CLOSED. Scope all iClosed queries to this date or
+// later for trustworthy stats.
+export const ICLOSED_DATA_SINCE = '2026-04-01';
+
 export const PROGRAMMES = ['Kickstarter', 'Mechanical Mastery', 'Pro', 'Elite', 'Mastermind'];
 
 export const DEAL_STATUSES = ['onboarding', 'active', 'follow_up', 'lost', 'cancelled'];

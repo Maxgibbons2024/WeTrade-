@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useRealtime } from './useSupabase';
-import { isInDateRange, CLOSERS } from '../lib/constants';
+import { isInDateRange, CLOSERS, ICLOSED_DATA_SINCE } from '../lib/constants';
 
 // Status taxonomy — adjust if iClosed uses different labels.
 // Anything in SHOWED_STATUSES counts as a live call.
@@ -37,8 +37,12 @@ export function isClosedCall(call) {
  * }}
  */
 export default function useIclosedStats(dateRange) {
+  // Scope to ICLOSED_DATA_SINCE onwards — before that, closers weren't
+  // consistently completing tasks so statuses are unreliable. Also keeps
+  // the dataset under Supabase's 1000-row default cap (table has ~7k rows).
   const { data: allCalls, loading, error, refetch } = useQuery('iclosed_calls', {
     order: { column: 'scheduled_at', ascending: false },
+    filters: [['gte', 'scheduled_at', `${ICLOSED_DATA_SINCE}T00:00:00Z`]],
   });
 
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
