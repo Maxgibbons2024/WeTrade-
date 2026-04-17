@@ -3,11 +3,16 @@ import { iclosedListAll, pick } from '../_lib/iclosed.js';
 import { resolveInternal } from '../_lib/closers.js';
 
 export default async function handler(req, res) {
-  // Auth: cron secret OR allow direct call when CRON_SECRET unset
+  // Auth: accept either the Bearer header (Vercel cron) or ?key= query
+  // param (manual browser trigger). Matches the pattern used by iclosed/sync
+  // and segmetrics/sync.
   const authHeader = req.headers.authorization;
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    const queryKey = req.query?.key;
+    if (!queryKey || queryKey !== cronSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
   }
   if (!process.env.ICLOSED_API_KEY) {
     return res.status(500).json({ error: 'Missing ICLOSED_API_KEY environment variable' });
