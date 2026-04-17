@@ -383,11 +383,11 @@ export default function PaymentPlans() {
         last_payment_confirmed: false,
       });
 
-      toast.error(`Failed payment logged for ${plan.client_name}`);
+      toast.success(`Marked as failed — ${plan.client_name}`);
       refetch();
       refetchReceipts();
     } catch (err) {
-      toast.error(`Error: ${err.message}`);
+      toast.error(`Failed to save: ${err.message}`);
     } finally {
       setMarkingPaid(null);
     }
