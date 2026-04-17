@@ -30,8 +30,10 @@ export const MENTORS = [
 ];
 
 export const SETTERS = [
-  { id: 'kai', name: 'Kai Reeve', initials: 'KR', color: '#8B5CF6' },
+  { id: 'connor', name: 'Connor George', initials: 'CG', color: '#14B8A6', active: true },
+  { id: 'kai',    name: 'Kai Reeve',     initials: 'KR', color: '#8B5CF6', active: false },
 ];
+export const ACTIVE_SETTERS = SETTERS.filter((s) => s.active);
 
 export const PACKAGES = [
   { id: '10_sessions', label: '10 Sessions', sessionsTotal: 10 },

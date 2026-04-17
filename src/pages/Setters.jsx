@@ -8,7 +8,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import useDateRange from '../hooks/useDateRange';
 import useIclosedStats, { isShowed, isNoShow, isClosedCall } from '../hooks/useIclosedStats';
-import { SETTERS, formatCurrency, formatDate } from '../lib/constants';
+import { SETTERS, ACTIVE_SETTERS, formatCurrency, formatDate } from '../lib/constants';
 
 export default function Setters() {
   const [filterSetter, setFilterSetter] = useState('kai');
@@ -108,7 +108,11 @@ export default function Setters() {
           className="bg-[#1a1d20] border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
         >
           <option value="all">All Setters</option>
-          {SETTERS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {ACTIVE_SETTERS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {/* Former setters still appear for historical data lookup */}
+          {SETTERS.filter((s) => !s.active).map((s) => (
+            <option key={s.id} value={s.id}>{s.name} (former)</option>
+          ))}
         </select>
       </div>
 
