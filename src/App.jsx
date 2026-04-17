@@ -25,7 +25,7 @@ const PAGES = {
   entry: ManualEntry,
 };
 
-const PASSCODE = 'wetrade2026';
+const PASSCODE = 'chair912';
 
 function LoginGate({ onAuth }) {
   const [code, setCode] = useState('');
