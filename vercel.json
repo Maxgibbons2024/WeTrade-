@@ -17,10 +17,6 @@
     {
       "path": "/api/segmetrics/sync",
       "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/segmetrics/attribution",
-      "schedule": "30 6 * * *"
     }
   ]
 }

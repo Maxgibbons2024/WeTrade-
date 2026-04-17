@@ -1,5 +1,13 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
 
+// Simple SegMetrics daily-stats sync.
+// Pulls daily spend / impressions / clicks / leads / revenue from the
+// SegMetrics `ads` report's graph datasets and stores in segmetrics_daily.
+//
+// We used to fetch campaign-level data day-by-day and try to do attribution
+// inside this dashboard, but SegMetrics already does attribution — we just
+// need the headline numbers for awareness.
+
 const SEGMETRICS_BASE = 'https://api.segmetrics.io';
 const BACKFILL_DAYS = 90;
 
@@ -28,15 +36,15 @@ export default async function handler(req, res) {
 
     if (!since) {
       const { count } = await supabase
-        .from('segmetrics_ads')
-        .select('id', { count: 'exact', head: true });
+        .from('segmetrics_daily')
+        .select('date', { count: 'exact', head: true });
 
       if (!count || count === 0) {
-        console.log(`[segmetrics/sync] table empty — backfilling last ${BACKFILL_DAYS} days`);
         const start = new Date();
         start.setDate(start.getDate() - BACKFILL_DAYS);
         since = start.toISOString().split('T')[0];
       } else {
+        // Only resync the last 7 days on normal runs (covers any late data)
         const d = new Date();
         d.setDate(d.getDate() - 7);
         since = d.toISOString().split('T')[0];
@@ -46,154 +54,62 @@ export default async function handler(req, res) {
       until = new Date().toISOString().split('T')[0];
     }
 
-    // Helper to fetch one day's campaign data from SegMetrics
-    async function fetchDay(dateStr) {
-      const url = `${SEGMETRICS_BASE}/${accountId}/report/ads?start=${dateStr}&end=${dateStr}&scale=day`;
-      const resp = await fetch(url, {
-        headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
-      });
-      if (!resp.ok) {
-        console.error(`[segmetrics/sync] API error for ${dateStr}: ${resp.status}`);
-        return [];
-      }
-      const data = await resp.json();
-      return { rows: data?.table?.rows || [], kpis: data?.kpis || [] };
-    }
+    // Single request — the graph.datasets contain daily time-series for each metric.
+    // No need to loop day-by-day.
+    const url = `${SEGMETRICS_BASE}/${accountId}/report/ads?start=${since}&end=${until}&scale=day`;
+    const resp = await fetch(url, {
+      headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+    });
 
-    // Debug mode: dump raw response for a single day
-    if (req.query?.debug === '1') {
-      const debugDate = req.query?.date || until;
-      const url = `${SEGMETRICS_BASE}/${accountId}/report/ads?start=${debugDate}&end=${debugDate}&scale=day`;
-      const resp = await fetch(url, {
-        headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
-      });
-      const data = await resp.json();
-      const tableRows = data?.table?.rows || [];
-      const tableFields = data?.table?.fields || [];
-      return res.status(200).json({
-        date: debugDate,
-        topLevelKeys: Object.keys(data || {}),
-        kpis: data?.kpis || [],
-        tableFields,
-        tableRowCount: tableRows.length,
-        sampleRows: tableRows.slice(0, 5),
-        graphLabels: (data?.graph?.labels || []).slice(0, 5),
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return res.status(502).json({
+        error: `SegMetrics API error: ${resp.status}`,
+        detail: errText,
       });
     }
 
-    // Fetch day-by-day to get per-campaign per-day data.
-    // SegMetrics table rows are campaign-level aggregates for the date range,
-    // so fetching one day at a time gives us daily granularity.
-    const allRows = [];
-    const dailyTotals = []; // KPI totals per day — needed for impressions (not in per-campaign table)
-    const cursor = new Date(since);
-    const end = new Date(until);
-    let daysProcessed = 0;
-    let apiErrors = 0;
+    const data = await resp.json();
+    const labels = data?.graph?.labels || [];
+    const datasets = data?.graph?.datasets || [];
 
-    // Helper to extract a KPI value from the kpis array by key
-    const kpiVal = (kpis, key) => {
-      const hit = (kpis || []).find((k) => k.key === key);
-      return hit ? Number(hit.value || 0) : 0;
-    };
-
-    while (cursor <= end) {
-      const dateStr = cursor.toISOString().split('T')[0];
-      const result = await fetchDay(dateStr);
-
-      if (Array.isArray(result)) {
-        // fetchDay returned [] on error
-        apiErrors++;
-      } else {
-        // Capture daily KPI totals (impressions only lives here, not in table rows)
-        if (result.kpis && result.kpis.length > 0) {
-          dailyTotals.push({
-            date: dateStr,
-            impressions: Math.round(kpiVal(result.kpis, 'adImpressions')),
-            spend: Math.round(kpiVal(result.kpis, 'adSpend') * 100) / 100,
-            clicks: Math.round(kpiVal(result.kpis, 'adClicks')),
-            leads: Math.round(kpiVal(result.kpis, 'leads')),
-            revenue: Math.round(kpiVal(result.kpis, 'revenue') * 100) / 100,
-            synced_at: new Date().toISOString(),
-          });
-        }
-        for (const row of result.rows) {
-          const campaignName = row.ad_campaign || '';
-          if (!campaignName) continue;
-
-          // SegMetrics field names (from debug output):
-          // ad_campaign, leads, numOfCustomers, revenue, adClicks, adSpend,
-          // ad_cpc, adCpa, adCac, adRoi
-          const spend = Number(row.adSpend || 0);
-          const clicks = Number(row.adClicks || 0);
-          const leads = Number(row.leads || 0);
-          const revenue = Number(row.revenue || 0);
-          const customers = Number(row.numOfCustomers || 0);
-
-          // Skip zero-activity rows
-          if (spend === 0 && clicks === 0 && leads === 0) continue;
-
-          const cpc = clicks > 0 ? spend / clicks : 0;
-          const cpl = leads > 0 ? spend / leads : 0;
-          const roas = spend > 0 ? revenue / spend : 0;
-
-          // Use campaign name as ID (SegMetrics doesn't give a numeric campaign_id in this endpoint)
-          const campaignId = campaignName.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 200);
-
-          allRows.push({
-            date: dateStr,
-            campaign_id: campaignId,
-            campaign_name: campaignName,
-            ad_set_id: '',
-            ad_set_name: '',
-            ad_id: `${campaignId}_${dateStr}`,
-            ad_name: '',
-            spend: Math.round(spend * 100) / 100,
-            clicks,
-            impressions: 0, // Not available in SegMetrics table response
-            leads,
-            revenue: Math.round(revenue * 100) / 100,
-            cpc: Math.round(cpc * 100) / 100,
-            cpl: Math.round(cpl * 100) / 100,
-            roas: Math.round(roas * 100) / 100,
-            raw: { ...row, customers, adCpa: row.adCpa, adCac: row.adCac },
-            synced_at: new Date().toISOString(),
-          });
-        }
-      }
-
-      daysProcessed++;
-      cursor.setDate(cursor.getDate() + 1);
-    }
-
-    if (allRows.length === 0) {
+    if (!labels.length || !datasets.length) {
       return res.status(200).json({
         ok: true,
-        message: 'No ad activity found in date range',
+        message: 'No graph data returned by SegMetrics',
         since,
         until,
-        daysProcessed,
-        apiErrors,
         count: 0,
       });
     }
 
-    // Dedupe by (ad_id, date)
-    const seen = new Map();
-    for (const r of allRows) {
-      const key = `${r.ad_id}::${r.date}`;
-      seen.set(key, r);
+    // Build a map: metric key → daily values array (aligned with labels)
+    const byKey = {};
+    for (const ds of datasets) {
+      if (ds.key && Array.isArray(ds.data)) {
+        byKey[ds.key] = ds.data;
+      }
     }
-    const dedupedRows = Array.from(seen.values());
 
-    // Upsert campaign rows in batches
+    // Compose one row per date
+    const rows = labels.map((date, i) => ({
+      date,
+      impressions: Math.round(Number(byKey.adImpressions?.[i] || 0)),
+      spend:       Math.round(Number(byKey.adSpend?.[i] || 0) * 100) / 100,
+      clicks:      Math.round(Number(byKey.adClicks?.[i] || 0)),
+      leads:       Math.round(Number(byKey.leads?.[i] || 0)),
+      revenue:     Math.round(Number(byKey.revenue?.[i] || 0) * 100) / 100,
+      synced_at:   new Date().toISOString(),
+    }));
+
+    // Upsert
     let upserted = 0;
     const errors = [];
-    for (let i = 0; i < dedupedRows.length; i += 500) {
-      const batch = dedupedRows.slice(i, i + 500);
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
       const { error } = await supabase
-        .from('segmetrics_ads')
-        .upsert(batch, { onConflict: 'ad_id,date' });
+        .from('segmetrics_daily')
+        .upsert(batch, { onConflict: 'date' });
       if (error) {
         console.error('[segmetrics/sync] Upsert error:', error.message);
         errors.push(error.message);
@@ -202,33 +118,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // Upsert daily totals (impressions etc. — account-wide KPIs)
-    let dailyUpserted = 0;
-    if (dailyTotals.length > 0) {
-      for (let i = 0; i < dailyTotals.length; i += 500) {
-        const batch = dailyTotals.slice(i, i + 500);
-        const { error } = await supabase
-          .from('segmetrics_daily')
-          .upsert(batch, { onConflict: 'date' });
-        if (error) {
-          console.error('[segmetrics/sync] Daily upsert error:', error.message);
-          errors.push(`daily: ${error.message}`);
-        } else {
-          dailyUpserted += batch.length;
-        }
-      }
-    }
-
     return res.status(200).json({
       ok: true,
       since,
       until,
-      daysProcessed,
-      apiErrors,
-      fetched: allRows.length,
-      deduped: dedupedRows.length,
+      rows: rows.length,
       upserted,
-      dailyUpserted,
+      availableKeys: Object.keys(byKey),
       errors: errors.length ? errors : undefined,
     });
   } catch (err) {
@@ -237,4 +133,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const config = { runtime: 'nodejs', maxDuration: 300 };
+export const config = { runtime: 'nodejs' };
