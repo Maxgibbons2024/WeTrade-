@@ -60,7 +60,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const users = await iclosedListAll('/v1/users', { pageSize: 100, maxPages: 5 });
+    // /v1/users uses offset-based pagination (page=N is ignored)
+    const users = await iclosedListAll('/v1/users', { pageSize: 100, maxPages: 5, paginationMode: 'offset' });
     const supabase = getSupabaseAdmin();
 
     const rows = [];

@@ -92,31 +92,41 @@ function extractItems(json) {
 /**
  * Page through a list endpoint until exhausted.
  *
- * iClosed caps `limit` at 100 and ignores `offset` on /v1/eventCalls, so we
- * use `page=N` (1-indexed). To stay under Vercel's function timeout on full
- * backfills (~68 pages × ~1s serial) we fetch pages in parallel batches.
- * Our iclosedFetch already handles 429 retries, which guards us against
+ * iClosed endpoints are inconsistent about pagination:
+ *   - /v1/eventCalls ignores `offset` → use `page=N` (1-indexed)   [default]
+ *   - /v1/users      ignores `page`   → use `offset=N*limit`
+ *
+ * Pass `paginationMode: 'offset'` for endpoints that want offset pagination.
+ *
+ * To stay under Vercel's function timeout on full backfills we fetch pages
+ * in parallel batches. iclosedFetch handles 429 retries to guard against
  * rate-limit blowback from the concurrency.
  */
-export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, concurrency = 5 } = {}) {
+export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, concurrency = 5, paginationMode = 'page' } = {}) {
   const seen = new Set();
   const all = [];
   const sep = path.includes('?') ? '&' : '?';
 
-  const fetchPage = async (page) => {
-    const url = `${path}${sep}limit=${pageSize}&page=${page}`;
+  const fetchPage = async (n) => {
+    const pagingParam = paginationMode === 'offset'
+      ? `offset=${n * pageSize}`
+      : `page=${n}`;
+    const url = `${path}${sep}limit=${pageSize}&${pagingParam}`;
     const json = await iclosedFetch(url);
     return extractItems(json);
   };
 
-  let nextPage = 1;
+  // offset mode is 0-indexed; page mode is 1-indexed.
+  let nextPage = paginationMode === 'offset' ? 0 : 1;
   let stop = false;
 
-  while (!stop && nextPage <= maxPages) {
+  while (!stop && nextPage < (paginationMode === 'offset' ? maxPages : maxPages + 1)) {
     // Fire a batch of `concurrency` sequential pages in parallel
     const batch = [];
-    for (let i = 0; i < concurrency && nextPage + i <= maxPages; i++) {
-      batch.push(fetchPage(nextPage + i));
+    for (let i = 0; i < concurrency; i++) {
+      const n = nextPage + i;
+      if (paginationMode === 'offset' ? n >= maxPages : n > maxPages) break;
+      batch.push(fetchPage(n));
     }
     const results = await Promise.all(batch);
     nextPage += results.length;
