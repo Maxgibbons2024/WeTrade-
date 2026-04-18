@@ -27,7 +27,7 @@ export default function Overview() {
   });
   const [editingTarget, setEditingTarget] = useState(false);
 
-  const { byCloser: iclosedByCloser, totals: iclosedTotals, todayCalls } = useIclosedStats(dateRange);
+  const { byCloser: iclosedByCloser, totals: iclosedTotals, bookedInRange: iclosedBookedInRange, todayCalls } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -417,7 +417,8 @@ export default function Overview() {
         />
         <MetricCard
           title="Calls Booked"
-          value={callStats.scheduled}
+          value={iclosedBookedInRange}
+          subtitle={callStats.scheduled !== iclosedBookedInRange ? `${callStats.scheduled} scheduled` : undefined}
         />
         <MetricCard
           title="Calls Taken"

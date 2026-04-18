@@ -106,6 +106,14 @@ export default function useIclosedStats(dateRange) {
     return { scheduled, live, noShows, closes, showRate, decided };
   }, [calls]);
 
+  // Calls BOOKED in date range — based on booked_at timestamp (when the
+  // booking was made), not scheduled_at (when the call happens). This matches
+  // iClosed's "Calls created" metric.
+  const bookedInRange = useMemo(() => {
+    if (!dateRange?.start) return (allCalls || []).filter((c) => c.booked_at).length;
+    return (allCalls || []).filter((c) => c.booked_at && isInDateRange(c.booked_at, dateRange.start, dateRange.end)).length;
+  }, [allCalls, dateRange?.start, dateRange?.end]);
+
   // Daily aggregates per closer (last 14 days within range)
   const daily = useMemo(() => {
     const out = {};
@@ -184,5 +192,5 @@ export default function useIclosedStats(dateRange) {
     return last7.length / 7;
   }, [allCalls]);
 
-  return { calls, byCloser, totals, daily, todayCalls, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
+  return { calls, byCloser, totals, bookedInRange, daily, todayCalls, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
 }
