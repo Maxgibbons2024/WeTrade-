@@ -350,14 +350,12 @@ export default async function handler(req, res) {
     mark('afterSeed');
 
     // 2. Decide date window: explicit query > auto-backfill (if calls table empty) > last 7 days
-    // `until` extends 14 days into the future so we pull upcoming BOOKED calls
-    // (most sales calls book within a fortnight). 30 days was too wide and
-    // timed out the Vercel function, so we tightened it.
+    // until = today by default. Extending into the future timed out the
+    // function (iClosed's /v1/eventCalls is much slower when querying future
+    // dates). Future bookings need a separate, lighter approach — see
+    // /api/iclosed/sync-upcoming.
     let since = req.query?.since;
-    const FUTURE_BUFFER_DAYS = 14;
-    const defaultUntilDate = new Date();
-    defaultUntilDate.setDate(defaultUntilDate.getDate() + FUTURE_BUFFER_DAYS);
-    const until = req.query?.until || defaultUntilDate.toISOString().split('T')[0];
+    const until = req.query?.until || new Date().toISOString().split('T')[0];
     if (!since) {
       const { count } = await supabase
         .from('iclosed_calls')
