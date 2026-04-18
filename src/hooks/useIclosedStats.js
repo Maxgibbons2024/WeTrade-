@@ -48,24 +48,21 @@ export default function useIclosedStats(dateRange) {
   const handleRealtime = useCallback(() => { refetch(); }, [refetch]);
   useRealtime('iclosed_calls', handleRealtime);
 
-  // Filter to range — exclude cancelled (don't count against show rate)
-  // and exclude future calls so the dashboard shows "calls so far" rather
-  // than "calls scheduled" (future BOOKED rows would otherwise inflate the
-  // scheduled count and dilute the show rate).
+  // All non-cancelled calls in range (includes future bookings so the
+  // "scheduled" count matches what iClosed itself reports for the period).
+  // Show / no-show / show-rate are computed only against PAST calls below.
   const calls = useMemo(() => {
-    const now = Date.now();
-    const base = (allCalls || []).filter((c) => {
-      if (isCancelled(c)) return false;
-      const t = c.scheduled_at ? new Date(c.scheduled_at).getTime() : 0;
-      if (t > now) return false;
-      return true;
-    });
+    const base = (allCalls || []).filter((c) => !isCancelled(c));
     if (!dateRange?.start) return base;
     return base.filter((c) => isInDateRange(c.scheduled_at, dateRange.start, dateRange.end));
   }, [allCalls, dateRange?.start, dateRange?.end]);
 
-  // Aggregate by closer
+  // Aggregate by closer.
+  // - scheduled: includes future bookings (matches iClosed booking count)
+  // - live / noShows: PAST calls only (a future call can't have shown/no-showed)
+  // - showRate: live / (live + noShows) — only decided calls
   const byCloser = useMemo(() => {
+    const now = Date.now();
     const map = {};
     for (const c of CLOSERS) {
       map[c.id] = { scheduled: 0, live: 0, noShows: 0, showRate: 0, closes: 0, closeRate: 0, revenue: 0 };
@@ -73,9 +70,11 @@ export default function useIclosedStats(dateRange) {
     for (const call of calls) {
       const key = call.closer_id;
       if (!key || !map[key]) continue;
+      const t = call.scheduled_at ? new Date(call.scheduled_at).getTime() : 0;
+      const isPast = t > 0 && t < now;
       map[key].scheduled += 1;
-      if (isShowed(call)) map[key].live += 1;
-      if (isNoShow(call)) map[key].noShows += 1;
+      if (isPast && isShowed(call)) map[key].live += 1;
+      if (isPast && isNoShow(call)) map[key].noShows += 1;
       if (isClosedCall(call)) {
         map[key].closes += 1;
         map[key].revenue += Number(call.deal_value || 0);
@@ -88,6 +87,23 @@ export default function useIclosedStats(dateRange) {
       m.closeRate = m.live > 0 ? Math.round((m.closes / m.live) * 100) : 0;
     }
     return map;
+  }, [calls]);
+
+  // Top-level totals across ALL non-cancelled calls in range, regardless of
+  // closer assignment. Use this for headline metrics that should match iClosed.
+  const totals = useMemo(() => {
+    const now = Date.now();
+    const scheduled = calls.length;
+    const past = calls.filter((c) => {
+      const t = c.scheduled_at ? new Date(c.scheduled_at).getTime() : 0;
+      return t > 0 && t < now;
+    });
+    const live = past.filter(isShowed).length;
+    const noShows = past.filter(isNoShow).length;
+    const closes = calls.filter(isClosedCall).length;
+    const decided = live + noShows;
+    const showRate = decided > 0 ? Math.round((live / decided) * 100) : 0;
+    return { scheduled, live, noShows, closes, showRate, decided };
   }, [calls]);
 
   // Daily aggregates per closer (last 14 days within range)
@@ -168,5 +184,5 @@ export default function useIclosedStats(dateRange) {
     return last7.length / 7;
   }, [allCalls]);
 
-  return { calls, byCloser, daily, todayCalls, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
+  return { calls, byCloser, totals, daily, todayCalls, upcomingThisMonth, recentCallsPerDay, loading, error, refetch };
 }

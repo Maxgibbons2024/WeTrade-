@@ -27,7 +27,7 @@ export default function Overview() {
   });
   const [editingTarget, setEditingTarget] = useState(false);
 
-  const { byCloser: iclosedByCloser, todayCalls } = useIclosedStats(dateRange);
+  const { byCloser: iclosedByCloser, totals: iclosedTotals, todayCalls } = useIclosedStats(dateRange);
 
   const { data: deals, loading: dealsLoading, error: dealsError, refetch: refetchDeals } = useQuery('deals', {
     order: { column: 'created_at', ascending: false },
@@ -170,20 +170,10 @@ export default function Overview() {
     };
   }, [totalCashCollected, frontEndCollected, monthlyTarget, paymentPlans, iclosedByCloser, newDeals]);
 
-  // iClosed call stats — only count active closers so inactive/former
-  // closers' historical calls don't inflate the totals.
-  const callStats = useMemo(() => {
-    let scheduled = 0;
-    let live = 0;
-    for (const closer of ACTIVE_CLOSERS) {
-      const stats = iclosedByCloser?.[closer.id];
-      if (!stats) continue;
-      scheduled += stats.scheduled || 0;
-      live += stats.live || 0;
-    }
-    const showRate = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
-    return { scheduled, live, showRate };
-  }, [iclosedByCloser]);
+  // iClosed call stats — read straight from the hook's totals which already
+  // count ALL non-cancelled calls in range (matches iClosed's UI numbers)
+  // and compute show rate against past decided calls only.
+  const callStats = iclosedTotals || { scheduled: 0, live: 0, noShows: 0, showRate: 0 };
 
   // Compare metrics
   const compareDeals = useMemo(() => compareRange ? salesDeals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [salesDeals, compareRange]);
@@ -453,10 +443,11 @@ export default function Overview() {
           subtitle={overduePayments.length > 0 ? `${formatCurrency(overduePayments.reduce((s, p) => s + Number(p.monthly_amount), 0))} outstanding` : 'All clear'}
         />
         <MetricCard
-          title="Cancellations"
-          value={cancellationStats.count}
-          danger={cancellationStats.count > 0}
-          subtitle={cancellationStats.count > 0 ? `${formatCurrency(cancellationStats.lostRemaining)} lost` : 'None'}
+          title="No Shows"
+          value={callStats.noShows}
+          danger={callStats.scheduled > 0 && callStats.noShows / Math.max(1, callStats.decided || 1) >= 0.45}
+          warning={callStats.scheduled > 0 && callStats.noShows / Math.max(1, callStats.decided || 1) >= 0.35 && callStats.noShows / Math.max(1, callStats.decided || 1) < 0.45}
+          subtitle={callStats.live + callStats.noShows > 0 ? `${Math.round((callStats.noShows / (callStats.live + callStats.noShows)) * 100)}% no-show rate` : 'No past calls yet'}
         />
       </div>
 
