@@ -350,8 +350,14 @@ export default async function handler(req, res) {
     mark('afterSeed');
 
     // 2. Decide date window: explicit query > auto-backfill (if calls table empty) > last 7 days
+    // `until` extends 30 days into the future so we pull upcoming BOOKED calls
+    // (sales calls rarely book further out than that). Without this, dashboard
+    // "Calls Booked" undercounts vs iClosed because tomorrow's calls aren't synced.
     let since = req.query?.since;
-    const until = req.query?.until || new Date().toISOString().split('T')[0];
+    const FUTURE_BUFFER_DAYS = 30;
+    const defaultUntilDate = new Date();
+    defaultUntilDate.setDate(defaultUntilDate.getDate() + FUTURE_BUFFER_DAYS);
+    const until = req.query?.until || defaultUntilDate.toISOString().split('T')[0];
     if (!since) {
       const { count } = await supabase
         .from('iclosed_calls')
