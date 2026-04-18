@@ -170,48 +170,73 @@ export default function Overview() {
     };
   }, [totalCashCollected, frontEndCollected, monthlyTarget, paymentPlans, iclosedByCloser, newDeals]);
 
-  // iClosed call stats (aggregated across all closers in the date range)
+  // iClosed call stats — only count active closers so inactive/former
+  // closers' historical calls don't inflate the totals.
   const callStats = useMemo(() => {
     let scheduled = 0;
     let live = 0;
-    for (const closer of CLOSERS) {
+    for (const closer of ACTIVE_CLOSERS) {
       const stats = iclosedByCloser?.[closer.id];
       if (!stats) continue;
       scheduled += stats.scheduled || 0;
       live += stats.live || 0;
     }
-    const decided = live; // showRate uses live/scheduled to match old sheet definition
     const showRate = scheduled > 0 ? Math.round((live / scheduled) * 100) : 0;
     return { scheduled, live, showRate };
   }, [iclosedByCloser]);
 
   // Compare metrics
   const compareDeals = useMemo(() => compareRange ? salesDeals.filter((d) => isInDateRange(d.created_at, compareRange.start, compareRange.end)) : [], [salesDeals, compareRange]);
+  // Compare set of "real" new deals (£999+) — excludes event tickets to match newDeals filter
+  const compareNewDeals = useMemo(() => compareDeals.filter((d) => Number(d.front_end || 0) >= 999), [compareDeals]);
   const compareCollected = compareDeals.reduce((sum, d) => sum + Number(d.front_end || 0), 0);
 
-  // Cancellations in the date range
-  const cancellations = useMemo(() => {
-    return salesDeals.filter((d) => {
-      if (d.status !== 'cancelled') return false;
-      // Use cancelled_at if set, otherwise fall back to updated_at or created_at
-      const cancelDate = d.cancelled_at || d.updated_at || d.created_at;
-      return isInDateRange(cancelDate, dateRange.start, dateRange.end);
-    });
-  }, [salesDeals, dateRange]);
-
+  // Cancellations in the date range — counts both cancelled deals AND
+  // cancelled payment plans (matches the PaymentPlans page logic).
+  // A plan can be cancelled without the deal being marked cancelled, so
+  // we union both sources and dedupe by deal id.
   const cancellationStats = useMemo(() => {
-    let lostMonthly = 0;
-    let lostRemaining = 0;
-    const details = cancellations.map((d) => {
-      const plan = paymentPlans?.find((p) => p.deal_id === d.id || (p.client_name && d.client_name && p.client_name.toLowerCase() === d.client_name.toLowerCase()));
+    const inRange = (dateStr) => isInDateRange(dateStr, dateRange.start, dateRange.end);
+
+    // Collect cancelled items from deals + plans, deduped by deal id (or plan id if no deal)
+    const map = new Map();
+
+    // 1. Cancelled deals
+    for (const d of salesDeals) {
+      if (d.status !== 'cancelled') continue;
+      const cancelDate = d.cancelled_at || d.updated_at || d.created_at;
+      if (!inRange(cancelDate)) continue;
+      const plan = paymentPlans?.find((p) =>
+        p.deal_id === d.id || (p.client_name && d.client_name && p.client_name.toLowerCase() === d.client_name.toLowerCase())
+      );
       const monthly = Number(d.monthly_amount || 0);
       const remaining = plan ? Number(plan.total_value || 0) - Number(plan.total_collected || 0) : 0;
-      lostMonthly += monthly;
-      lostRemaining += remaining;
-      return { deal: d, plan, monthly, remaining };
-    });
-    return { count: cancellations.length, lostMonthly, lostRemaining, details };
-  }, [cancellations, paymentPlans]);
+      map.set(d.id, { deal: d, plan, monthly, remaining });
+    }
+
+    // 2. Cancelled plans (whose deal isn't already counted above)
+    for (const p of (paymentPlans || [])) {
+      if (p.status !== 'cancelled') continue;
+      const cancelDate = p.updated_at || p.next_due_date;
+      if (!inRange(cancelDate)) continue;
+      const linkedDeal = (deals || []).find((d) =>
+        d.id === p.deal_id || (d.client_name && p.client_name && d.client_name.toLowerCase() === p.client_name.toLowerCase())
+      );
+      const key = linkedDeal?.id || `plan-${p.id}`;
+      if (map.has(key)) continue; // already counted via deal
+      const monthly = Number(p.monthly_amount || 0);
+      const remaining = Math.max(0, Number(p.total_value || 0) - Number(p.total_collected || 0));
+      map.set(key, { deal: linkedDeal || { id: key, client_name: p.client_name, closer_id: p.closer_id, closer_name: p.closer_id, programme: '—' }, plan: p, monthly, remaining });
+    }
+
+    const details = Array.from(map.values());
+    let lostMonthly = 0, lostRemaining = 0;
+    for (const item of details) { lostMonthly += item.monthly; lostRemaining += item.remaining; }
+    return { count: details.length, lostMonthly, lostRemaining, details };
+  }, [salesDeals, paymentPlans, deals, dateRange]);
+
+  // Backwards-compat alias (some places below referenced `cancellations` array)
+  const cancellations = cancellationStats.details.map((d) => d.deal);
 
   // Overdue payments (always current, not filtered by date)
   const overduePayments = useMemo(() => paymentPlans.filter((p) => p.status === 'overdue'), [paymentPlans]);
@@ -417,8 +442,9 @@ export default function Overview() {
         />
         <MetricCard
           title="Deals Closed"
-          value={rangeDeals.length}
-          delta={compareEnabled ? calcDelta(rangeDeals.length, compareDeals.length) : null}
+          value={newDeals.length}
+          subtitle={rangeDeals.length > newDeals.length ? `+${rangeDeals.length - newDeals.length} tickets` : undefined}
+          delta={compareEnabled ? calcDelta(newDeals.length, compareNewDeals.length) : null}
         />
         <MetricCard
           title="Overdue Payments"
