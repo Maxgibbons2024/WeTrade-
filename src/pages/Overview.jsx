@@ -418,7 +418,7 @@ export default function Overview() {
         <MetricCard
           title="Calls Booked"
           value={iclosedBookedInRange}
-          subtitle={callStats.scheduled !== iclosedBookedInRange ? `${callStats.scheduled} scheduled` : undefined}
+          subtitle={iclosedBookedInRange === 0 ? `tracking from 18 Apr — accurate next week` : (callStats.scheduled !== iclosedBookedInRange ? `${callStats.scheduled} scheduled this period` : undefined)}
         />
         <MetricCard
           title="Calls Taken"
