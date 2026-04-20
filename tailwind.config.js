@@ -11,25 +11,60 @@ export default {
           mid: '#0A80A7',       // deep cyan variant (underused)
         },
         // Semantic status colours — single source of truth for success/warning/danger/info
-        // Prefer `text-semantic-success` etc. over raw `text-green-400` going forward.
         semantic: {
-          success: '#10B981',   // deal closed, payment succeeded, on track
-          warning: '#F59E0B',   // due soon, pending, attention needed
-          danger:  '#EF4444',   // overdue, failed, cancelled
-          info:    '#27CCE7',   // default info (same as brand-cyan)
+          success: '#10B981',
+          warning: '#F59E0B',
+          danger:  '#EF4444',
+          info:    '#27CCE7',
         },
-        // Surface aliases — naming makes intent clearer than `brand-dark` vs `brand-darker`
         surface: {
-          DEFAULT: '#252A2E',   // app background
-          elevated: '#1a1d20',  // card background
+          DEFAULT: '#252A2E',
+          elevated: '#1a1d20',
         },
       },
       fontFamily: {
-        montserrat: ['Montserrat', 'sans-serif'],
+        // Inter is the premium-dashboard default (Linear, Vercel, Stripe, etc.)
+        // `sans` is what the body class uses by default now — no need for `font-montserrat` anymore.
+        sans: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif',
+        ],
+        // Legacy alias — kept so existing `font-montserrat` usages don't break, but maps to Inter.
+        montserrat: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'sans-serif',
+        ],
       },
       fontSize: {
-        // `text-[10px]` was used 56+ times for captions/badges — give it a name
         caption: ['10px', { lineHeight: '14px' }],
+      },
+      boxShadow: {
+        // Soft elevation replaces heavy borders for that premium depth feel.
+        // Dark-theme tuned: stronger opacity since light bg would wash them out.
+        'elev-1': '0 1px 2px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25)',
+        'elev-2': '0 4px 12px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3)',
+        'elev-3': '0 12px 32px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.35)',
+        'elev-4': '0 24px 64px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.4)',
+      },
+      keyframes: {
+        'slide-in-right': {
+          '0%': { transform: 'translateX(100%)', opacity: '0' },
+          '100%': { transform: 'translateX(0)', opacity: '1' },
+        },
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+      },
+      animation: {
+        'slide-in-right': 'slide-in-right 200ms ease-out',
+        'fade-in': 'fade-in 150ms ease-out',
       },
     },
   },

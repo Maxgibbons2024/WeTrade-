@@ -112,7 +112,7 @@ export default function SortableTable({ columns, data, onRowClick, defaultSort }
                   className={`transition-colors ${clickable ? 'cursor-pointer hover:bg-white/[0.03] focus:outline-none focus-visible:bg-white/[0.04] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-brand-cyan' : ''}`}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className="px-4 py-3 whitespace-nowrap">
+                    <td key={col.key} className="px-4 py-3 whitespace-nowrap tabular">
                       {col.render ? col.render(row[col.key], row) : row[col.key] ?? '—'}
                     </td>
                   ))}

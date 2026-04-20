@@ -90,7 +90,7 @@ export default function App() {
             background: '#1a1d20',
             color: '#fff',
             border: '1px solid #3a3f44',
-            fontFamily: 'Montserrat, sans-serif',
+            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
           },
           success: { iconTheme: { primary: '#27CCE7', secondary: '#fff' } },
           error: { iconTheme: { primary: '#EF4444', secondary: '#fff' } },

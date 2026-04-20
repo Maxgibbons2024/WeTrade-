@@ -48,8 +48,12 @@ export default function Card({
   return (
     <Tag
       className={[
-        'bg-brand-darker rounded-xl border',
-        borderClass,
+        // Base: elevated surface with subtle top highlight + 1-px dark border (ring).
+        // Feels more premium than heavy borders — think Linear/Mercury.
+        'bg-brand-darker rounded-xl ring-1 shadow-elev-1',
+        'ring-white/[0.04]',
+        // Accent-coloured ring overrides the neutral ring above (Tailwind last-wins on specificity).
+        borderClass.replace('border-', 'ring-'),
         padClass,
         interactiveClass,
         className,

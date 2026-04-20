@@ -82,11 +82,11 @@ export default function Fathom() {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: '#9CA3AF', font: { family: 'Montserrat', size: 11 } } },
+      legend: { labels: { color: '#9CA3AF', font: { family: 'Inter', size: 11 } } },
     },
     scales: {
-      x: { stacked: true, ticks: { color: '#6B7280', font: { family: 'Montserrat', size: 10 } }, grid: { display: false } },
-      y: { stacked: true, ticks: { color: '#6B7280', font: { family: 'Montserrat', size: 10 }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      x: { stacked: true, ticks: { color: '#6B7280', font: { family: 'Inter', size: 10 } }, grid: { display: false } },
+      y: { stacked: true, ticks: { color: '#6B7280', font: { family: 'Inter', size: 10 }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } },
     },
   };
 

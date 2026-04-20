@@ -60,23 +60,23 @@ export default function SlideOver({ open, onClose, title, children }) {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      {/* Backdrop */}
+      {/* Backdrop with blur for premium feel */}
       <div
-        className="fixed inset-0 bg-black/50"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
         aria-hidden="true"
       />
-      {/* Panel */}
+      {/* Panel slides in from right with elevation shadow */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-lg bg-brand-darker h-full overflow-y-auto shadow-xl border-l border-gray-800 focus:outline-none"
+        className="relative w-full max-w-lg bg-brand-darker h-full overflow-y-auto shadow-elev-4 border-l border-white/[0.04] focus:outline-none animate-slide-in-right"
       >
-        <div className="flex items-center justify-between p-6 border-b border-gray-800 sticky top-0 bg-brand-darker z-10">
-          <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
+        <div className="flex items-center justify-between p-6 border-b border-white/[0.04] sticky top-0 bg-brand-darker/95 backdrop-blur-sm z-10">
+          <h2 id={titleId} className="text-base font-semibold tracking-tight">{title}</h2>
           <button
             type="button"
             onClick={onClose}

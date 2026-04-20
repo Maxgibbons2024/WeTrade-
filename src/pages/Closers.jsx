@@ -140,15 +140,15 @@ export default function Closers() {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: '#9CA3AF', font: { family: 'Montserrat', size: 11 } } },
+      legend: { labels: { color: '#9CA3AF', font: { family: 'Inter', size: 11 } } },
       tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` } },
     },
     scales: {
-      x: { ticks: { color: '#6B7280', font: { family: 'Montserrat', size: 10 } }, grid: { display: false } },
+      x: { ticks: { color: '#6B7280', font: { family: 'Inter', size: 10 } }, grid: { display: false } },
       y: {
         min: 0,
         max: 100,
-        ticks: { color: '#6B7280', font: { family: 'Montserrat', size: 10 }, callback: (v) => `${v}%` },
+        ticks: { color: '#6B7280', font: { family: 'Inter', size: 10 }, callback: (v) => `${v}%` },
         grid: { color: 'rgba(255,255,255,0.05)' },
       },
     },

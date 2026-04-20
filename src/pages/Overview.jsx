@@ -380,7 +380,7 @@ export default function Overview() {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        labels: { color: '#9CA3AF', font: { family: 'Montserrat', size: 11 } },
+        labels: { color: '#9CA3AF', font: { family: 'Inter', size: 11 } },
       },
       tooltip: {
         callbacks: {
@@ -389,11 +389,11 @@ export default function Overview() {
       },
     },
     scales: {
-      x: { ticks: { color: '#6B7280', font: { family: 'Montserrat', size: 10 } }, grid: { display: false } },
+      x: { ticks: { color: '#6B7280', font: { family: 'Inter', size: 10 } }, grid: { display: false } },
       y: {
         ticks: {
           color: '#6B7280',
-          font: { family: 'Montserrat', size: 10 },
+          font: { family: 'Inter', size: 10 },
           callback: (v) => `£${v.toLocaleString()}`,
         },
         grid: { color: 'rgba(255,255,255,0.05)' },

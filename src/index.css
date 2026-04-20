@@ -9,10 +9,22 @@
 }
 
 body {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: #252A2E;
   color: #ffffff;
   min-height: 100vh;
+  /* Premium type rendering: subtle weight optimisation + ligatures like real dashboards use */
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular numerals — apply to any element showing aligned numbers (metric values, table cells). */
+.tabular,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }
 
 /* Scrollbar styling */
@@ -31,12 +43,7 @@ body {
   background: #27CCE7;
 }
 
-/* Table row hover */
-.table-row-hover:hover {
-  background-color: rgba(39, 204, 231, 0.05);
-}
-
 /* Toast overrides */
 .toast-custom {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
