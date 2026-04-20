@@ -56,8 +56,39 @@ export default function Overview() {
   // Cash collected = front end from deals + successful payment receipts in range
   //                + manual payments (bank transfers, PayPal, Mamo) in range.
   // manual_payments uses `payment_date` whereas payment_receipts uses `received_at`.
-  const rangeReceipts = useMemo(() => (receipts || []).filter((r) => r.success && isInDateRange(r.received_at, dateRange.start, dateRange.end)), [receipts, dateRange]);
-  const rangeManual = useMemo(() => (manualPayments || []).filter((p) => isInDateRange(p.payment_date, dateRange.start, dateRange.end)), [manualPayments, dateRange]);
+  //
+  // DEDUP RULE: if a receipt/manual payment is linked to a PIF deal (no monthly
+  // amount) and has no payment_plan_id, it's the Stripe/manual confirmation
+  // of the deal's front_end — already counted via `frontEndCollected`. Skip
+  // to avoid double-counting. This happens when Slack posts the deal in
+  // #sales-team AND the Stripe receipt in #payments; user links them in
+  // Payment Plans → Activity.
+  const isPifConfirmation = (row, hasPlanId) => {
+    if (hasPlanId) return false;
+    if (!row.deal_id) return false;
+    const linkedDeal = (deals || []).find((d) => d.id === row.deal_id);
+    if (!linkedDeal) return false;
+    return Number(linkedDeal.monthly_amount || 0) === 0; // PIF if no monthly
+  };
+  const rangeReceipts = useMemo(
+    () => (receipts || []).filter((r) => {
+      if (!r.success) return false;
+      if (!isInDateRange(r.received_at, dateRange.start, dateRange.end)) return false;
+      if (isPifConfirmation(r, !!r.payment_plan_id)) return false;
+      return true;
+    }),
+    [receipts, dateRange, deals]
+  );
+  const rangeManual = useMemo(
+    () => (manualPayments || []).filter((p) => {
+      if (!isInDateRange(p.payment_date, dateRange.start, dateRange.end)) return false;
+      // Manual payments don't have payment_plan_id; treat any link to a PIF
+      // deal as a confirmation of that deal's FE.
+      if (isPifConfirmation(p, false)) return false;
+      return true;
+    }),
+    [manualPayments, dateRange, deals]
+  );
   const ppCollected = useMemo(() => {
     const stripeTotal = rangeReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
     const manualTotal = rangeManual.reduce((sum, p) => sum + Number(p.amount || 0), 0);

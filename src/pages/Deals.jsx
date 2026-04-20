@@ -116,10 +116,15 @@ export default function Deals() {
       });
     }
     // Payment receipts → installment or first-payment
+    // Skip receipts that are confirmations of a PIF deal's FE (already in
+    // the deal row above) — avoids the double-counting when a Slack deal
+    // message and a Stripe receipt arrive for the same PIF client.
     for (const r of (receipts || [])) {
       if (!r.amount || Number(r.amount) === 0) continue;
       const plan = r.payment_plan_id ? (paymentPlans || []).find((p) => p.id === r.payment_plan_id) : null;
       const linkedDeal = r.deal_id ? (deals || []).find((d) => d.id === r.deal_id) : null;
+      const isPifFEConfirmation = r.success && linkedDeal && !r.payment_plan_id && Number(linkedDeal.monthly_amount || 0) === 0;
+      if (isPifFEConfirmation) continue; // already counted as the deal's FE row
       const closerId = plan?.closer_id || linkedDeal?.closer_id || null;
       const closer = CLOSERS.find((c) => c.id === closerId);
       let type;
@@ -140,11 +145,15 @@ export default function Deals() {
         ref: r,
       });
     }
-    // Manual payments → new cash unless linked to a deal that has a plan
+    // Manual payments → new cash unless linked to a deal that has a plan.
+    // Same PIF-dedup as receipts: a manual payment linked to a PIF deal (no
+    // monthly, no plan) is already counted as that deal's FE row.
     for (const m of (manualPayments || [])) {
       if (!m.amount || Number(m.amount) === 0) continue;
       const linkedDeal = m.deal_id ? (deals || []).find((d) => d.id === m.deal_id) : null;
       const linkedPlan = linkedDeal ? (paymentPlans || []).find((p) => p.deal_id === linkedDeal.id) : null;
+      const isPifFEConfirmation = linkedDeal && !linkedPlan && Number(linkedDeal.monthly_amount || 0) === 0;
+      if (isPifFEConfirmation) continue;
       const closerId = linkedDeal?.closer_id || null;
       const closer = CLOSERS.find((c) => c.id === closerId);
       rows.push({
