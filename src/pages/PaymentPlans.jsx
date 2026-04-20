@@ -519,7 +519,7 @@ export default function PaymentPlans() {
 
       {/* Cancellations / Lost Revenue */}
       {cancelledStats.count > 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+        <div className="bg-brand-darker rounded-xl border border-red-500/20 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-red-400">Cancelled Plans — Lost Revenue</h3>
             <span className="text-lg font-bold text-red-400">{formatCurrency(cancelledStats.lostRemaining)}</span>
@@ -560,7 +560,7 @@ export default function PaymentPlans() {
         <button
           onClick={() => setTab('plans')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            tab === 'plans' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+            tab === 'plans' ? 'bg-brand-cyan text-white' : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
           }`}
         >
           Payment Plans
@@ -568,7 +568,7 @@ export default function PaymentPlans() {
         <button
           onClick={() => setTab('receipts')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            tab === 'receipts' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+            tab === 'receipts' ? 'bg-brand-cyan text-white' : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
           }`}
         >
           Payment Activity
@@ -596,7 +596,7 @@ export default function PaymentPlans() {
             <button
               onClick={() => setReceiptFilter('all')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                receiptFilter === 'all' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+                receiptFilter === 'all' ? 'bg-brand-cyan text-white' : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
               }`}
             >
               All ({(receipts || []).length})
@@ -604,7 +604,7 @@ export default function PaymentPlans() {
             <button
               onClick={() => setReceiptFilter('unmatched')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                receiptFilter === 'unmatched' ? 'bg-amber-500 text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+                receiptFilter === 'unmatched' ? 'bg-amber-500 text-white' : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
               }`}
             >
               Unmatched ({unmatchedReceipts.length})
@@ -857,7 +857,7 @@ export default function PaymentPlans() {
       {/* Payment date prompt */}
       {paymentDatePrompt && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setPaymentDatePrompt(null)}>
-          <div className="bg-[#1a1d20] border border-gray-700 rounded-xl p-6 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-brand-darker border border-gray-700 rounded-xl p-6 w-80 space-y-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-semibold">Record Payment</h3>
             <p className="text-xs text-gray-400">{paymentDatePrompt.client_name} — {formatCurrency(paymentDatePrompt.monthly_amount)}</p>
             <div>

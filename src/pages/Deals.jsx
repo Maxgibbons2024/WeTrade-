@@ -576,7 +576,7 @@ export default function Deals() {
         <button
           onClick={() => setTab('deals')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            tab === 'deals' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+            tab === 'deals' ? 'bg-brand-cyan text-white' : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
           }`}
         >
           Deals
@@ -584,7 +584,7 @@ export default function Deals() {
         <button
           onClick={() => setTab('transactions')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            tab === 'transactions' ? 'bg-brand-cyan text-white' : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+            tab === 'transactions' ? 'bg-brand-cyan text-white' : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
           }`}
         >
           Transactions
@@ -598,7 +598,7 @@ export default function Deals() {
         <select
           value={filterCloser}
           onChange={(e) => setFilterCloser(e.target.value)}
-          className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
+          className="bg-brand-darker border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
         >
           <option value="all">All Closers</option>
           {CLOSERS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -607,7 +607,7 @@ export default function Deals() {
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-[#1a1d20] border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
+            className="bg-brand-darker border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-brand-cyan"
           >
             <option value="all">All Statuses</option>
             {DEAL_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
@@ -639,7 +639,7 @@ export default function Deals() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   txTypeFilter === pill.id
                     ? 'bg-brand-cyan text-white'
-                    : 'bg-[#1a1d20] text-gray-400 hover:text-white border border-gray-800'
+                    : 'bg-brand-darker text-gray-400 hover:text-white border border-gray-800'
                 }`}
               >
                 {pill.label}
@@ -649,22 +649,22 @@ export default function Deals() {
 
           {/* Running totals */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+            <div className="bg-brand-darker border border-gray-800 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">Total Cash</p>
               <p className="text-xl font-bold text-brand-cyan">{formatCurrency(txTotals.total)}</p>
               <p className="text-[10px] text-gray-600 mt-1">{txTotals.count} transaction{txTotals.count !== 1 ? 's' : ''}</p>
             </div>
-            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+            <div className="bg-brand-darker border border-gray-800 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">New Cash</p>
               <p className="text-xl font-bold text-green-400">{formatCurrency(txTotals.newCash)}</p>
               <p className="text-[10px] text-gray-600 mt-1">New deals + first payments</p>
             </div>
-            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+            <div className="bg-brand-darker border border-gray-800 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">Payment Plan</p>
               <p className="text-xl font-bold text-amber-400">{formatCurrency(txTotals.planCash)}</p>
               <p className="text-[10px] text-gray-600 mt-1">Installments collected</p>
             </div>
-            <div className="bg-[#1a1d20] border border-gray-800 rounded-xl p-4">
+            <div className="bg-brand-darker border border-gray-800 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">Failed</p>
               <p className="text-xl font-bold text-red-400">{formatCurrency(txTotals.failed)}</p>
               <p className="text-[10px] text-gray-600 mt-1">Declined / insufficient</p>

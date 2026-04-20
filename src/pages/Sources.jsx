@@ -134,7 +134,7 @@ export default function Sources() {
       />
 
       {allCalls.length === 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
           No iClosed calls synced yet.
         </div>
       )}
@@ -151,7 +151,7 @@ export default function Sources() {
 
       {/* Funnel */}
       {bookings > 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Email Funnel</h3>
           <div className="space-y-3">
             <FunnelRow label="Booked" value={bookings} pct={100} colour="bg-blue-500" />
@@ -173,7 +173,7 @@ export default function Sources() {
 
       {/* Campaign breakdown */}
       {byCampaign.length > 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-gray-400">By Email Campaign</h3>
             <span className="text-[10px] text-gray-500">Ranked by revenue</span>

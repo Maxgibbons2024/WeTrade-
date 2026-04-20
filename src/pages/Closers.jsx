@@ -203,7 +203,7 @@ export default function Closers() {
           return (
             <div
               key={stat.id}
-              className={`bg-[#1a1d20] rounded-xl border p-5 cursor-pointer transition-colors ${isExpanded ? 'border-brand-cyan/50' : 'border-gray-800 hover:border-gray-700'}`}
+              className={`bg-brand-darker rounded-xl border p-5 cursor-pointer transition-colors ${isExpanded ? 'border-brand-cyan/50' : 'border-gray-800 hover:border-gray-700'}`}
               onClick={() => setExpandedCloser(isExpanded ? null : stat.id)}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -451,7 +451,7 @@ export default function Closers() {
           {showInactive && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-60">
               {inactiveStats.map((stat) => (
-                <div key={stat.id} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-4">
+                <div key={stat.id} className="bg-brand-darker rounded-xl border border-gray-800 p-4">
                   <div className="flex items-center gap-3">
                     <CloserAvatar closerId={stat.id} size="sm" />
                     <div className="flex-1">
@@ -467,7 +467,7 @@ export default function Closers() {
       )}
 
       {/* Monthly trend chart */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-400 mb-4">Show Rate Trend (Last 8 Weeks)</h3>
         <div className="h-72">
           <Line data={trendData} options={trendOptions} />

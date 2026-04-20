@@ -107,7 +107,7 @@ export default function Setters() {
         <select
           value={filterSetter}
           onChange={(e) => setFilterSetter(e.target.value)}
-          className="bg-[#1a1d20] border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+          className="bg-brand-darker border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
         >
           <option value="all">All Setters</option>
           {ACTIVE_SETTERS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -129,12 +129,12 @@ export default function Setters() {
       />
 
       {allCalls.length === 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
           No iClosed calls synced yet. Once <code className="text-brand-cyan">api/iclosed/sync</code> runs, setter stats will appear here.
         </div>
       )}
       {allCalls.length > 0 && calls.length === 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
           No calls attributed to {filterSetter === 'all' ? 'any setter' : SETTERS.find((s) => s.id === filterSetter)?.name || filterSetter} in this period.
           {filterSetter !== 'all' && <span className="block mt-1 text-[10px] text-gray-600">Try "All Setters" or another date range.</span>}
         </div>
@@ -150,7 +150,7 @@ export default function Setters() {
       </div>
 
       {/* Funnel */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-400 mb-4">Booked → Showed → Closed</h3>
         <div className="space-y-3">
           {[

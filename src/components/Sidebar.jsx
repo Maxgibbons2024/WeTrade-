@@ -22,26 +22,32 @@ export default function Sidebar({ activePage, onNavigate }) {
     <>
       {/* Mobile hamburger */}
       <button
+        type="button"
         onClick={() => setCollapsed(!collapsed)}
-        className="fixed top-4 left-4 z-50 md:hidden bg-[#1a1d20] p-2 rounded-lg border border-gray-700"
+        aria-label={collapsed ? 'Close navigation' : 'Open navigation'}
+        aria-expanded={collapsed}
+        aria-controls="primary-nav"
+        className="fixed top-4 left-4 z-50 md:hidden bg-brand-darker p-2 rounded-lg border border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan"
       >
-        <svg className="w-6 h-6 text-brand-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-6 h-6 text-brand-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={collapsed ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
         </svg>
       </button>
 
       {/* Overlay for mobile */}
       {collapsed && (
-        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setCollapsed(false)} />
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setCollapsed(false)} aria-hidden="true" />
       )}
 
       <aside
+        id="primary-nav"
+        aria-label="Primary"
         className={`
           fixed md:sticky top-0 left-0 z-40 h-screen
-          bg-[#1a1d20] border-r border-gray-800
+          bg-brand-darker border-r border-gray-800
           flex flex-col transition-all duration-200
           ${collapsed ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          w-64 md:w-64 lg:w-64
+          w-64
         `}
       >
         {/* Logo */}
@@ -54,19 +60,22 @@ export default function Sidebar({ activePage, onNavigate }) {
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
+              type="button"
+              aria-current={activePage === item.id ? 'page' : undefined}
               onClick={() => {
                 onNavigate(item.id);
                 setCollapsed(false);
               }}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan
                 ${activePage === item.id
                   ? 'bg-brand-cyan/10 text-brand-cyan'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }
               `}
             >
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
               </svg>
               <span>{item.label}</span>

@@ -137,7 +137,7 @@ export default function Fathom() {
       {/* Per-closer stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {closerStats.map((stat) => (
-          <div key={stat.id} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <div key={stat.id} className="bg-brand-darker rounded-xl border border-gray-800 p-5">
             <div className="flex items-center gap-3 mb-3">
               <CloserAvatar closerId={stat.id} size="lg" />
               <h3 className="font-semibold">{stat.name}</h3>
@@ -167,7 +167,7 @@ export default function Fathom() {
       </div>
 
       {/* Weekly calls chart */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-400 mb-4">Weekly Calls per Closer</h3>
         <div className="h-64">
           <Bar data={chartData} options={chartOptions} />

@@ -46,7 +46,7 @@ function LoginGate({ onAuth }) {
 
   return (
     <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-8 w-full max-w-sm">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-8 w-full max-w-sm">
         <div className="text-center mb-6">
           <img src="/wetrade_color_darkgrey%20bg.png" alt="WeTrade" className="h-10 mx-auto mb-4" />
           <p className="text-sm text-gray-400">Enter passcode to access the dashboard</p>

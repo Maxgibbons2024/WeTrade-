@@ -165,7 +165,7 @@ export default function ManualEntry() {
 
       {/* Deal form */}
       {tab === 'deal' && (
-        <form onSubmit={submitDeal} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 space-y-4">
+        <form onSubmit={submitDeal} className="bg-brand-darker rounded-xl border border-gray-800 p-6 space-y-4">
           <h3 className="text-sm font-medium text-gray-400">New Deal</h3>
           <div>
             <label className={labelClass}>Client Name *</label>
@@ -235,7 +235,7 @@ export default function ManualEntry() {
 
       {/* Payment Plan form */}
       {tab === 'payment_plan' && (
-        <form onSubmit={submitPlanPayment} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 space-y-4">
+        <form onSubmit={submitPlanPayment} className="bg-brand-darker rounded-xl border border-gray-800 p-6 space-y-4">
           <h3 className="text-sm font-medium text-gray-400">New Payment Plan</h3>
           <div>
             <label className={labelClass}>Client Name *</label>
@@ -283,7 +283,7 @@ export default function ManualEntry() {
 
       {/* Manual Payment form */}
       {tab === 'manual_payment' && (
-        <form onSubmit={submitManualPayment} className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 space-y-4">
+        <form onSubmit={submitManualPayment} className="bg-brand-darker rounded-xl border border-gray-800 p-6 space-y-4">
           <h3 className="text-sm font-medium text-gray-400">Record Manual Payment</h3>
           <div>
             <label className={labelClass}>Client Name *</label>

@@ -484,7 +484,7 @@ export default function Overview() {
       </div>
 
       {/* Monthly Target Tracker */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-400">Monthly Target</h3>
           <div className="flex items-center gap-2">
@@ -665,7 +665,7 @@ export default function Overview() {
 
       {/* Call Booking Pace Monitor */}
       {targetStats.callsTaken > 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Call Booking Pace</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             <div className="bg-brand-dark rounded-lg p-3">
@@ -710,7 +710,7 @@ export default function Overview() {
       )}
 
       {/* Weekly revenue chart */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-400 mb-4">Weekly Revenue</h3>
         <div className="h-64">
           <Bar data={chartData} options={chartOptions} />
@@ -721,7 +721,7 @@ export default function Overview() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Revenue at Risk */}
         {overduePayments.length > 0 && (
-          <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+          <div className="bg-brand-darker rounded-xl border border-red-500/20 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-red-400">Revenue at Risk</h3>
               <span className="text-lg font-bold text-red-400">{formatCurrency(totalAtRisk)}</span>
@@ -759,7 +759,7 @@ export default function Overview() {
 
         {/* Cancellations / Lost Revenue */}
         {cancellationStats.count > 0 && (
-          <div className="bg-[#1a1d20] rounded-xl border border-red-500/20 p-5">
+          <div className="bg-brand-darker rounded-xl border border-red-500/20 p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-red-400">Cancellations</h3>
               <span className="text-lg font-bold text-red-400">{formatCurrency(cancellationStats.lostRemaining)}</span>
@@ -794,7 +794,7 @@ export default function Overview() {
 
         {/* Closer Leaderboard */}
         {leaderboard.length > 0 && (
-          <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
             <h3 className="text-sm font-medium text-gray-400 mb-4">Closer Leaderboard</h3>
             <div className="space-y-3">
               {leaderboard.map((closer, i) => (
@@ -823,7 +823,7 @@ export default function Overview() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent deals */}
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Recent Deals</h3>
           <div className="space-y-3">
             {recentDeals.length === 0 ? (
@@ -850,7 +850,7 @@ export default function Overview() {
         </div>
 
         {/* Call Stats by Closer */}
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Call Stats by Closer</h3>
           <div className="space-y-4">
             {CLOSERS.map((closer) => {
@@ -879,7 +879,7 @@ export default function Overview() {
       </div>
 
       {/* Today's calls */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5 mt-6">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5 mt-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-400">Today's Calls</h3>
           <span className="text-xs text-gray-500">

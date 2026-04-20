@@ -270,7 +270,7 @@ export default function Community() {
         <select
           value={filterMentor}
           onChange={(e) => setFilterMentor(e.target.value)}
-          className="bg-[#1a1d20] border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+          className="bg-brand-darker border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
         >
           <option value="all">All Mentors</option>
           {MENTORS.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
@@ -278,7 +278,7 @@ export default function Community() {
         <select
           value={filterPackage}
           onChange={(e) => setFilterPackage(e.target.value)}
-          className="bg-[#1a1d20] border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
+          className="bg-brand-darker border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-cyan"
         >
           <option value="all">All Packages</option>
           <option value="10_sessions">10 Sessions</option>
@@ -307,7 +307,7 @@ export default function Community() {
       {/* Leaderboards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Trustpilot Reviews */}
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Trustpilot Reviews</h3>
           {trustpilotStudents.length === 0 ? (
             <p className="text-xs text-gray-600">No reviews yet</p>
@@ -329,7 +329,7 @@ export default function Community() {
         </div>
 
         {/* Prop Funded by Closer */}
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Prop Funded by Closer</h3>
           {fundedByCloser.length === 0 ? (
             <p className="text-xs text-gray-600">No funded students yet</p>
@@ -353,7 +353,7 @@ export default function Community() {
         </div>
 
         {/* Funding by Prop Firm */}
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-4">Funding by Prop Firm</h3>
           {fundingByFirm.length === 0 ? (
             <p className="text-xs text-gray-600">No funding data yet</p>

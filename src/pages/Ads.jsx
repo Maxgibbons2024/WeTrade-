@@ -247,7 +247,7 @@ export default function Ads() {
       </div>
 
       {/* ---- ROAS Section ---- */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-sm font-medium text-gray-400">Return on Ad Spend</h3>
@@ -294,7 +294,7 @@ export default function Ads() {
       </div>
 
       {/* Chart — Spend vs Cash */}
-      <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+      <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-400">Spend vs Cash Collected</h3>
           <div className="flex gap-1">
@@ -318,7 +318,7 @@ export default function Ads() {
 
       {/* Breakdown table with ROAS columns */}
       {timeSeriesData.length > 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
           <h3 className="text-sm font-medium text-gray-400 mb-3">
             {timeView === 'daily' ? 'Daily' : timeView === 'weekly' ? 'Weekly' : 'Monthly'} Breakdown
           </h3>
@@ -364,7 +364,7 @@ export default function Ads() {
       )}
 
       {rangeDaily.length === 0 && (
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-8 text-center text-gray-500 text-sm">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-8 text-center text-gray-500 text-sm">
           No ad data for this period.
         </div>
       )}

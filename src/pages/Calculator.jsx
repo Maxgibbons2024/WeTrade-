@@ -156,7 +156,7 @@ export default function Calculator() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Inputs */}
-        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5 space-y-5">
+        <div className="bg-brand-darker rounded-xl border border-gray-800 p-5 space-y-5">
           <h3 className="text-sm font-medium text-gray-400">Inputs</h3>
 
           {/* Target */}
@@ -263,7 +263,7 @@ export default function Calculator() {
         {/* Outputs */}
         <div className="space-y-4">
           {/* At current pace */}
-          <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
             <h3 className="text-sm font-medium text-gray-400 mb-4">At Current Pace</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -303,7 +303,7 @@ export default function Calculator() {
           </div>
 
           {/* To hit target */}
-          <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
             <h3 className="text-sm font-medium text-gray-400 mb-4">To Hit {formatCurrency(eff.target)}</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-3 gap-3">
@@ -331,7 +331,7 @@ export default function Calculator() {
           </div>
 
           {/* Quick scenarios */}
-          <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-5">
+          <div className="bg-brand-darker rounded-xl border border-gray-800 p-5">
             <h3 className="text-sm font-medium text-gray-400 mb-3">Quick Scenarios</h3>
             <div className="space-y-2">
               {[150000, 200000, 250000, 300000].map((t) => {
