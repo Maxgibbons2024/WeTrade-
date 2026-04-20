@@ -11,7 +11,9 @@ import useIclosedStats, { isShowed, isNoShow, isClosedCall } from '../hooks/useI
 import { SETTERS, ACTIVE_SETTERS, formatCurrency, formatDate } from '../lib/constants';
 
 export default function Setters() {
-  const [filterSetter, setFilterSetter] = useState('kai');
+  // Default to 'all' — Kai was the original sole setter but has left; Connor
+  // just joined so pinning to any single setter risked showing an empty page.
+  const [filterSetter, setFilterSetter] = useState('all');
   const [viewingCall, setViewingCall] = useState(null);
   const { preset, setPreset, presets, dateRange, customStart, customEnd, setCustomStart, setCustomEnd } = useDateRange('this_month');
 
@@ -129,6 +131,12 @@ export default function Setters() {
       {allCalls.length === 0 && (
         <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
           No iClosed calls synced yet. Once <code className="text-brand-cyan">api/iclosed/sync</code> runs, setter stats will appear here.
+        </div>
+      )}
+      {allCalls.length > 0 && calls.length === 0 && (
+        <div className="bg-[#1a1d20] rounded-xl border border-gray-800 p-6 text-center text-sm text-gray-500">
+          No calls attributed to {filterSetter === 'all' ? 'any setter' : SETTERS.find((s) => s.id === filterSetter)?.name || filterSetter} in this period.
+          {filterSetter !== 'all' && <span className="block mt-1 text-[10px] text-gray-600">Try "All Setters" or another date range.</span>}
         </div>
       )}
 
