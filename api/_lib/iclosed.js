@@ -192,7 +192,12 @@ export function normaliseCall(call) {
   // The call's userId is the CLOSER (owner/host)
   const closer_iclosed_id = call.userId != null ? String(call.userId) : null;
 
-  // Setter is hidden in secondaryAnswers as "Set By" question
+  // Setter extraction — two possible sources:
+  //   1. secondaryAnswers with a "Set By" question (manually tagged by team)
+  //   2. SettedClaim.user.id — iClosed's record of who claimed/set the booking
+  //      Skip when claimStatus is USER_SCHEDULED (that means the lead self-
+  //      booked via the public link — no setter involved). Team-set calls
+  //      (ADMIN_SCHEDULED, SET_BY_USER, etc.) attribute to the team member.
   let setter_iclosed_id = null;
   if (Array.isArray(call.secondaryAnswers)) {
     for (const sa of call.secondaryAnswers) {
@@ -202,6 +207,12 @@ export function normaliseCall(call) {
         }
         if (setter_iclosed_id) break;
       }
+    }
+  }
+  if (!setter_iclosed_id && call.SettedClaim && call.SettedClaim.user?.id != null) {
+    const claim = call.SettedClaim;
+    if (claim.claimStatus !== 'USER_SCHEDULED') {
+      setter_iclosed_id = String(claim.user.id);
     }
   }
 
