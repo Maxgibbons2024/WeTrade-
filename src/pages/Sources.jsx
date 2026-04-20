@@ -41,9 +41,17 @@ export default function Sources() {
 
   const { calls: allCalls, loading, error } = useIclosedStats(dateRange);
 
-  // Only email-sourced calls
+  // Only email-sourced calls.
+  // iClosed stores the channel in utm_source (e.g. "email", "fk" for Klaviyo
+  // followups, etc.), not utm_medium (which holds the specific sequence).
+  // Accept either utm_source === 'email' OR utm_medium === 'email' so we
+  // don't miss any email-tagged bookings.
   const emailCalls = useMemo(
-    () => allCalls.filter((c) => (c.utm_medium || '').toLowerCase() === 'email'),
+    () => allCalls.filter((c) => {
+      const src = (c.utm_source || '').toLowerCase();
+      const med = (c.utm_medium || '').toLowerCase();
+      return src === 'email' || med === 'email';
+    }),
     [allCalls]
   );
 
