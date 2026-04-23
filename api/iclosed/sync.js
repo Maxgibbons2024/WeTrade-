@@ -7,47 +7,60 @@ import {
 } from '../_lib/iclosed.js';
 import { resolveInternal } from '../_lib/closers.js';
 
-// Day-by-day iClosed sync.
+// iClosed sync — paginate-all-then-filter.
 //
-// Why day-by-day: /v1/eventCalls has ~7000 rows total. Traditional pagination
-// (limit=100, page=1..N) was consistently dropping the last ~100 calls — the
-// tail of the result set — no matter what we tried (serial vs parallel, dup
-// tolerance, offset vs page). That meant the most recent bookings (Connor's
-// newly-set calls, today's reschedules) never landed in Supabase.
+// Discovery log:
+//   1. /v1/eventCalls IGNORES from/to query params. Passing from=2026-04-23 &
+//      to=2026-04-23 returns the SAME 200-row slice as any other date. Verified
+//      by running day-by-day fetches: every day returned identical 200 rows.
+//   2. Default sort is oldest-first. limit=100&page=1 returns the oldest 100
+//      calls (early 2025 / Kai-era bookings). Recent calls are at page 65+.
+//   3. That explains the original missing-tail bug: old pagination bailed out
+//      early (consecutive-duplicate-pages heuristic or maxPages cap) and
+//      therefore never reached the newest rows. We were also dropping the
+//      last ~100 calls that matter most.
 //
-// The team books ~20–40 calls/day, well under iClosed's limit=100/request cap.
-// So we query each day individually: 1 request per day = ZERO pagination risk.
-// Total: ~44 requests per cron run (14 days back + 30 forward) × ~300ms each
-// = ~15s. Easy fit inside the 300s maxDuration.
+// Strategy: paginate forward through EVERY page until iClosed returns < page
+// size (= genuine end of dataset). No early bailouts. No duplicate-page
+// heuristics. Then upsert the full result set — Supabase's onConflict: 'id'
+// handles re-writes cheaply.
 //
-// Default window: today-14 → today+30.
-//   * 14 back: catches reschedules, completions, cancellations on recently-
-//     booked calls so our status/outcome fields stay fresh.
-//   * 30 forward: captures all upcoming bookings — the core use case now that
-//     we need to see Connor's set calls for the week ahead.
+// Runtime: ~70 pages × ~300ms = ~21s. Fits inside 300s maxDuration with
+// plenty of headroom.
 
-const DAYS_BACK = 14;
-const DAYS_FORWARD = 30;
+async function fetchAllEventCalls({ pageSize = 100, hardMaxPages = 300 } = {}) {
+  const all = [];
+  const seen = new Set();
 
-// Fetch all calls in one day via iClosed's from/to filter.
-// Defensive: if a single day ever exceeds 100 calls, spill to page 2.
-async function fetchDay(dateStr) {
-  const from = `${dateStr}T00:00:00Z`;
-  const to = `${dateStr}T23:59:59Z`;
-  const url1 = `/v1/eventCalls?from=${from}&to=${to}&limit=100&page=1`;
-  const json1 = await iclosedFetch(url1);
-  const items = json1?.data?.eventCalls || [];
+  for (let page = 1; page <= hardMaxPages; page++) {
+    const url = `/v1/eventCalls?limit=${pageSize}&page=${page}`;
+    const json = await iclosedFetch(url);
+    const items = json?.data?.eventCalls || [];
 
-  if (items.length === 100) {
-    // Rare overflow path — log so we notice if the team ever triples in size.
-    const url2 = `/v1/eventCalls?from=${from}&to=${to}&limit=100&page=2`;
-    const json2 = await iclosedFetch(url2);
-    const more = json2?.data?.eventCalls || [];
-    console.warn(`[iclosed/sync] ${dateStr} hit 100 calls — spilled to page 2 (+${more.length})`);
-    items.push(...more);
+    if (items.length === 0) break; // true end of dataset
+
+    let newItems = 0;
+    for (const item of items) {
+      const id = item?.id ?? item?.callId;
+      const key = id != null ? String(id) : JSON.stringify(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(item);
+      newItems += 1;
+    }
+
+    // Short page → last page (iClosed returned fewer than we asked for).
+    if (items.length < pageSize) break;
+
+    // Zero new items across a full page almost certainly means iClosed has
+    // entered a pagination loop (returning the same rows). Log and stop.
+    if (newItems === 0) {
+      console.warn(`[iclosed/sync] page ${page} returned ${items.length} rows but all duplicates — stopping`);
+      break;
+    }
   }
 
-  return items;
+  return all;
 }
 
 // Seed iclosed_users from /v1/users on first run (when the mapping table is empty).
@@ -86,20 +99,6 @@ async function seedUsersIfEmpty(supabase) {
   return { seeded: rows.length, alreadyPresent: false };
 }
 
-// Build YYYY-MM-DD strings for a date range (inclusive both ends).
-function dayList(startDate, endDate) {
-  const days = [];
-  const cur = new Date(startDate);
-  cur.setUTCHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setUTCHours(0, 0, 0, 0);
-  while (cur <= end) {
-    days.push(cur.toISOString().split('T')[0]);
-    cur.setUTCDate(cur.getUTCDate() + 1);
-  }
-  return days;
-}
-
 export default async function handler(req, res) {
   // Auth: Bearer header (Vercel cron) OR ?key= query param (browser bookmark).
   const authHeader = req.headers.authorization;
@@ -121,59 +120,20 @@ export default async function handler(req, res) {
     // 1. Seed user mapping if empty
     const seedResult = await seedUsersIfEmpty(supabase);
 
-    // 2. Load user mapping for closer/setter resolution
+    // 2. Load user mapping
     const { data: users, error: usersErr } = await supabase.from('iclosed_users').select('*');
     if (usersErr) throw usersErr;
     const userMap = new Map((users || []).map((u) => [String(u.iclosed_user_id), u]));
 
-    // 3. Compute day window
-    const now = new Date();
-    const defaultSince = new Date(now);
-    defaultSince.setUTCDate(defaultSince.getUTCDate() - DAYS_BACK);
-    const defaultUntil = new Date(now);
-    defaultUntil.setUTCDate(defaultUntil.getUTCDate() + DAYS_FORWARD);
-
-    const since = req.query?.since || defaultSince.toISOString().split('T')[0];
-    const until = req.query?.until || defaultUntil.toISOString().split('T')[0];
-    const days = dayList(since, until);
-
-    // 4. Fetch each day serially. Each request is ~300ms and fully independent.
-    const rawCalls = [];
-    const byDay = {};
-    const dayErrors = {};
-    for (const day of days) {
-      try {
-        const calls = await fetchDay(day);
-        byDay[day] = calls.length;
-        rawCalls.push(...calls);
-      } catch (err) {
-        console.error(`[iclosed/sync] ${day} failed:`, err.message);
-        dayErrors[day] = err.message;
-        byDay[day] = null;
-      }
-    }
+    // 3. Fetch EVERYTHING from iClosed. Client-side filtering happens after.
+    const rawCalls = await fetchAllEventCalls({ pageSize: 100, hardMaxPages: 300 });
+    const fetchMs = Date.now() - t0;
 
     if (!rawCalls.length) {
-      return res.status(200).json({
-        ok: true,
-        message: 'No calls returned by iClosed for this window',
-        since,
-        until,
-        daysQueried: days.length,
-        byDay,
-        dayErrors: Object.keys(dayErrors).length ? dayErrors : undefined,
-      });
+      return res.status(200).json({ ok: true, message: 'No calls returned by iClosed', fetchMs });
     }
 
-    // 5. Dedupe by id (same call shouldn't appear across day queries, but be safe)
-    const byId = new Map();
-    for (const c of rawCalls) {
-      const id = c.id ?? c.callId;
-      if (id != null) byId.set(String(id), c);
-    }
-    const dedupedRaw = Array.from(byId.values());
-
-    // 6. Pre-load deals for matching
+    // 4. Pre-load deals for matching
     const { data: deals, error: dealsErr } = await supabase
       .from('deals')
       .select('id, client_name, email, front_end, created_at');
@@ -190,9 +150,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // 7. Normalise + resolve closer/setter + match deal
+    // 5. Normalise every call + resolve closer/setter + match deal
     const bySetter = {};
-    const rows = dedupedRaw.map((rawCall) => {
+    const byScheduledMonth = {}; // sanity metric — did we reach recent calls?
+    const rows = rawCalls.map((rawCall) => {
       const norm = normaliseCall(rawCall);
 
       const closerUser = norm.closer_iclosed_id ? userMap.get(String(norm.closer_iclosed_id)) : null;
@@ -200,8 +161,11 @@ export default async function handler(req, res) {
       const closer_id = closerUser?.role === 'closer' ? closerUser.internal_id : null;
       const setter_id = setterUser?.role === 'setter' ? setterUser.internal_id : null;
 
-      if (setter_id) {
-        bySetter[setter_id] = (bySetter[setter_id] || 0) + 1;
+      if (setter_id) bySetter[setter_id] = (bySetter[setter_id] || 0) + 1;
+
+      if (norm.scheduled_at) {
+        const ym = norm.scheduled_at.slice(0, 7);
+        byScheduledMonth[ym] = (byScheduledMonth[ym] || 0) + 1;
       }
 
       // Deal matching: email first, then name within ±14 days of the call
@@ -211,7 +175,7 @@ export default async function handler(req, res) {
       }
       if (!dealMatch && norm.contact_name) {
         const candidates = dealsByName.get(norm.contact_name.toLowerCase().trim()) || [];
-        const callTime = new Date(norm.scheduled_at).getTime();
+        const callTime = norm.scheduled_at ? new Date(norm.scheduled_at).getTime() : 0;
         for (const c of candidates) {
           const diffDays = Math.abs(callTime - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24);
           if (diffDays <= 14) { dealMatch = c; break; }
@@ -230,7 +194,7 @@ export default async function handler(req, res) {
 
     const matched = rows.filter((r) => r.deal_id).length;
 
-    // 8. Upsert in batches of 500
+    // 6. Upsert in batches of 500
     let processed = 0;
     const upsertErrors = [];
     for (let i = 0; i < rows.length; i += 500) {
@@ -242,36 +206,37 @@ export default async function handler(req, res) {
       else processed += batch.length;
     }
 
-    // 9. Debug mode: return a sample row so we can spot-check attribution
-    const debug = req.query?.debug === '1' ? {
-      sample: rows[0] ? {
-        id: rows[0].id,
-        scheduled_at: rows[0].scheduled_at,
-        contact_name: rows[0].contact_name,
-        closer_iclosed_id: rows[0].closer_iclosed_id,
-        setter_iclosed_id: rows[0].setter_iclosed_id,
-        closer_id: rows[0].closer_id,
-        setter_id: rows[0].setter_id,
-        status: rows[0].status,
-      } : null,
-    } : undefined;
+    // 7. Recent-window snapshot — last 14 days + next 30 days
+    const now = Date.now();
+    const windowStart = now - 14 * 24 * 60 * 60 * 1000;
+    const windowEnd   = now + 30 * 24 * 60 * 60 * 1000;
+    const inWindow = rows.filter((r) => {
+      if (!r.scheduled_at) return false;
+      const t = new Date(r.scheduled_at).getTime();
+      return t >= windowStart && t <= windowEnd;
+    });
+    const windowBySetter = {};
+    for (const r of inWindow) {
+      if (r.setter_id) windowBySetter[r.setter_id] = (windowBySetter[r.setter_id] || 0) + 1;
+    }
 
     return res.status(200).json({
       ok: true,
-      since,
-      until,
-      daysQueried: days.length,
       fetched: rawCalls.length,
-      deduped: dedupedRaw.length,
       processed,
       matched,
       bySetter,
-      byDay,
-      dayErrors: Object.keys(dayErrors).length ? dayErrors : undefined,
+      byScheduledMonth,
+      window: {
+        start: new Date(windowStart).toISOString(),
+        end:   new Date(windowEnd).toISOString(),
+        calls: inWindow.length,
+        bySetter: windowBySetter,
+      },
       upsertErrors: upsertErrors.length ? upsertErrors : undefined,
       seeded: seedResult.seeded,
       elapsedMs: Date.now() - t0,
-      ...(debug ? { debug } : {}),
+      fetchMs,
     });
   } catch (err) {
     console.error('iClosed sync error:', err);
@@ -279,6 +244,6 @@ export default async function handler(req, res) {
   }
 }
 
-// Full sync window is ~44 days × ~300ms each = ~15s. Extra headroom for
-// deal matching, upserts, and occasional 429 retries.
+// ~70 pages × ~300ms = ~21s for the fetch, plus deal matching + upserts.
+// Keep maxDuration high for safety on slow iClosed responses.
 export const config = { runtime: 'nodejs', maxDuration: 300 };
