@@ -92,54 +92,56 @@ function extractItems(json) {
 /**
  * Page through a list endpoint until exhausted.
  *
- * iClosed caps `limit` at 100 and ignores `offset` on /v1/eventCalls, so we
- * use `page=N` (1-indexed). To stay under Vercel's function timeout on full
- * backfills (~68 pages × ~1s serial) we fetch pages in parallel batches.
- * Our iclosedFetch already handles 429 retries, which guards us against
- * rate-limit blowback from the concurrency.
+ * iClosed caps `limit` at 100. Pagination param is `page=N` (1-indexed) for
+ * /v1/eventCalls, `offset=N*limit` (0-indexed) for /v1/users.
+ *
+ * Historical bug: we used parallel batch fetching (concurrency=5), and if
+ * any batch happened to return rows we'd already seen, the "no new items
+ * added → stop" heuristic bailed out early, missing the tail of the result
+ * set. For /v1/eventCalls this caused us to miss the ~100 most recent
+ * bookings. Now we paginate serially and only stop on genuinely empty or
+ * short pages.
  */
-export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, concurrency = 5 } = {}) {
+export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, paginationMode = 'page' } = {}) {
   const seen = new Set();
   const all = [];
   const sep = path.includes('?') ? '&' : '?';
 
-  const fetchPage = async (page) => {
-    const url = `${path}${sep}limit=${pageSize}&page=${page}`;
+  const fetchPage = async (pageIdx) => {
+    const url = paginationMode === 'offset'
+      ? `${path}${sep}limit=${pageSize}&offset=${pageIdx * pageSize}`
+      : `${path}${sep}limit=${pageSize}&page=${pageIdx + 1}`; // 1-indexed for page mode
     const json = await iclosedFetch(url);
     return extractItems(json);
   };
 
-  let nextPage = 1;
-  let stop = false;
+  let consecutiveDupPages = 0;
+  for (let p = 0; p < maxPages; p++) {
+    const items = await fetchPage(p);
+    if (!items.length) break; // true end of result set
 
-  while (!stop && nextPage <= maxPages) {
-    // Fire a batch of `concurrency` sequential pages in parallel
-    const batch = [];
-    for (let i = 0; i < concurrency && nextPage + i <= maxPages; i++) {
-      batch.push(fetchPage(nextPage + i));
+    let added = 0;
+    for (const item of items) {
+      const id = item?.id ?? item?.callId ?? item?.userId;
+      const key = id != null ? String(id) : JSON.stringify(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(item);
+      added += 1;
     }
-    const results = await Promise.all(batch);
-    nextPage += results.length;
 
-    for (const items of results) {
-      if (!items.length) { stop = true; continue; }
+    // Short page → last page of result set.
+    if (items.length < pageSize) break;
 
-      let added = 0;
-      for (const item of items) {
-        const id = item?.id ?? item?.callId ?? item?.userId;
-        const key = id != null ? String(id) : JSON.stringify(item);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        all.push(item);
-        added += 1;
-      }
-
-      // No new ids on this page → pagination param was ignored, bail out
-      // rather than looping.
-      if (added === 0) { stop = true; }
-
-      // Short page → last page of the result set.
-      if (items.length < pageSize) { stop = true; }
+    // If a page returned zero new items, it MAY be because pagination is
+    // broken OR iClosed is returning duplicates. Allow up to 3 consecutive
+    // all-duplicate pages before bailing out — some iClosed endpoints don't
+    // fully respect pagination and return overlapping pages.
+    if (added === 0) {
+      consecutiveDupPages += 1;
+      if (consecutiveDupPages >= 3) break;
+    } else {
+      consecutiveDupPages = 0;
     }
   }
 
