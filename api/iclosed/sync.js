@@ -101,6 +101,41 @@ export default async function handler(req, res) {
     return res.status(200).json(out);
   }
 
+  // Contacts probe: iClosed stores "Setter owner" on the CONTACT (not the
+  // call). This tries common iClosed contact endpoint paths to find one
+  // that returns setter owner info. Pass &contactId=N to target a specific
+  // contact; otherwise we just list contacts to see the response shape.
+  // Hit /api/iclosed/sync?key=...&debug=contacts&contactId=3228268
+  if (req.query?.debug === 'contacts') {
+    const contactId = req.query?.contactId;
+    const paths = [
+      '/v1/contacts?limit=5',
+      '/v1/contacts?limit=5&offset=0',
+      '/v1/contact?limit=5',
+      ...(contactId ? [
+        `/v1/contacts/${contactId}`,
+        `/v1/contact/${contactId}`,
+        `/v1/contacts?id=${contactId}`,
+      ] : []),
+    ];
+    const out = { probes: [] };
+    for (const p of paths) {
+      try {
+        const r = await iclosedFetch(p);
+        out.probes.push({
+          path: p,
+          ok: true,
+          topLevelKeys: r && typeof r === 'object' && !Array.isArray(r) ? Object.keys(r) : (Array.isArray(r) ? `array[${r.length}]` : typeof r),
+          dataKeys: r?.data && typeof r.data === 'object' && !Array.isArray(r.data) ? Object.keys(r.data) : null,
+          sample: r,
+        });
+      } catch (e) {
+        out.probes.push({ path: p, ok: false, error: e.message });
+      }
+    }
+    return res.status(200).json(out);
+  }
+
   // Shape probe: inspects already-synced iclosed_calls.raw so we can see the
   // real task/outcome fields iClosed writes and tune normaliseCall.
   // Hit /api/iclosed/sync?key=...&debug=shapes
