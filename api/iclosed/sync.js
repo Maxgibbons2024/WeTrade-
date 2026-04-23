@@ -28,36 +28,44 @@ import { resolveInternal } from '../_lib/closers.js';
 // Runtime: ~70 pages × ~300ms = ~21s. Fits inside 300s maxDuration with
 // plenty of headroom.
 
-async function fetchAllEventCalls({ pageSize = 100, hardMaxPages = 300 } = {}) {
+// Parallel pagination in concurrency-N batches.
+// iClosed requests take ~1-2s each. Serial across 70 pages = 2min+ and
+// we'd timeout before finishing. Fetch 8 pages in parallel per round.
+async function fetchAllEventCalls({ pageSize = 100, hardMaxPages = 300, concurrency = 8 } = {}) {
   const all = [];
   const seen = new Set();
 
-  for (let page = 1; page <= hardMaxPages; page++) {
-    const url = `/v1/eventCalls?limit=${pageSize}&page=${page}`;
-    const json = await iclosedFetch(url);
-    const items = json?.data?.eventCalls || [];
+  for (let startPage = 1; startPage <= hardMaxPages; startPage += concurrency) {
+    const endPage = Math.min(startPage + concurrency - 1, hardMaxPages);
+    const pageNums = [];
+    for (let p = startPage; p <= endPage; p++) pageNums.push(p);
 
-    if (items.length === 0) break; // true end of dataset
+    const results = await Promise.all(
+      pageNums.map((p) =>
+        iclosedFetch(`/v1/eventCalls?limit=${pageSize}&page=${p}`).then(
+          (json) => ({ page: p, items: json?.data?.eventCalls || [] }),
+          (err) => ({ page: p, items: [], error: err.message })
+        )
+      )
+    );
 
-    let newItems = 0;
-    for (const item of items) {
-      const id = item?.id ?? item?.callId;
-      const key = id != null ? String(id) : JSON.stringify(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      all.push(item);
-      newItems += 1;
+    let anyShort = false;
+    let anyItems = false;
+    for (const { page, items } of results.sort((a, b) => a.page - b.page)) {
+      if (items.length > 0) anyItems = true;
+      for (const item of items) {
+        const id = item?.id ?? item?.callId;
+        const key = id != null ? String(id) : JSON.stringify(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push(item);
+      }
+      if (items.length < pageSize) anyShort = true;
     }
 
-    // Short page → last page (iClosed returned fewer than we asked for).
-    if (items.length < pageSize) break;
-
-    // Zero new items across a full page almost certainly means iClosed has
-    // entered a pagination loop (returning the same rows). Log and stop.
-    if (newItems === 0) {
-      console.warn(`[iclosed/sync] page ${page} returned ${items.length} rows but all duplicates — stopping`);
-      break;
-    }
+    // If the whole batch came back short OR empty, we've hit the end.
+    if (!anyItems) break;
+    if (anyShort) break;
   }
 
   return all;
