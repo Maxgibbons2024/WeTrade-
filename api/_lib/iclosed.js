@@ -93,63 +93,61 @@ function extractItems(json) {
  * Page through a list endpoint until exhausted.
  *
  * iClosed endpoints are inconsistent about pagination:
- *   - /v1/eventCalls ignores `offset` → use `page=N` (1-indexed)   [default]
- *   - /v1/users      ignores `page`   → use `offset=N*limit`
+ *   - /v1/eventCalls uses `page=N` (1-indexed)      [default]
+ *   - /v1/users      uses `offset=N*limit` (0-indexed)
  *
  * Pass `paginationMode: 'offset'` for endpoints that want offset pagination.
  *
- * To stay under Vercel's function timeout on full backfills we fetch pages
- * in parallel batches. iclosedFetch handles 429 retries to guard against
- * rate-limit blowback from the concurrency.
+ * Historical bug: parallel batch fetching (concurrency=5) combined with
+ * the "no new items added → stop" heuristic caused the sync to bail out
+ * early, missing the tail of the result set. For /v1/eventCalls we were
+ * missing the ~100 most recent bookings.
+ *
+ * Fix: paginate serially. Only stop on genuinely empty / short pages.
+ * Allow up to 3 consecutive all-duplicate pages before bailing (some
+ * iClosed endpoints return overlapping pages when pagination is unstable).
  */
-export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, concurrency = 5, paginationMode = 'page' } = {}) {
+export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, paginationMode = 'page' } = {}) {
   const seen = new Set();
   const all = [];
   const sep = path.includes('?') ? '&' : '?';
 
-  const fetchPage = async (n) => {
+  const fetchPage = async (pageIdx) => {
+    // offset mode is 0-indexed, page mode is 1-indexed
     const pagingParam = paginationMode === 'offset'
-      ? `offset=${n * pageSize}`
-      : `page=${n}`;
+      ? `offset=${pageIdx * pageSize}`
+      : `page=${pageIdx + 1}`;
     const url = `${path}${sep}limit=${pageSize}&${pagingParam}`;
     const json = await iclosedFetch(url);
     return extractItems(json);
   };
 
-  // offset mode is 0-indexed; page mode is 1-indexed.
-  let nextPage = paginationMode === 'offset' ? 0 : 1;
-  let stop = false;
+  let consecutiveDupPages = 0;
+  for (let p = 0; p < maxPages; p++) {
+    const items = await fetchPage(p);
+    if (!items.length) break; // true end of result set
 
-  while (!stop && nextPage < (paginationMode === 'offset' ? maxPages : maxPages + 1)) {
-    // Fire a batch of `concurrency` sequential pages in parallel
-    const batch = [];
-    for (let i = 0; i < concurrency; i++) {
-      const n = nextPage + i;
-      if (paginationMode === 'offset' ? n >= maxPages : n > maxPages) break;
-      batch.push(fetchPage(n));
+    let added = 0;
+    for (const item of items) {
+      const id = item?.id ?? item?.callId ?? item?.userId;
+      const key = id != null ? String(id) : JSON.stringify(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push(item);
+      added += 1;
     }
-    const results = await Promise.all(batch);
-    nextPage += results.length;
 
-    for (const items of results) {
-      if (!items.length) { stop = true; continue; }
+    // Short page → last page of result set.
+    if (items.length < pageSize) break;
 
-      let added = 0;
-      for (const item of items) {
-        const id = item?.id ?? item?.callId ?? item?.userId;
-        const key = id != null ? String(id) : JSON.stringify(item);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        all.push(item);
-        added += 1;
-      }
-
-      // No new ids on this page → pagination param was ignored, bail out
-      // rather than looping.
-      if (added === 0) { stop = true; }
-
-      // Short page → last page of the result set.
-      if (items.length < pageSize) { stop = true; }
+    // If a page returned zero new items, it MAY be because pagination is
+    // broken OR iClosed is returning duplicates. Allow up to 3 consecutive
+    // all-duplicate pages before bailing out.
+    if (added === 0) {
+      consecutiveDupPages += 1;
+      if (consecutiveDupPages >= 3) break;
+    } else {
+      consecutiveDupPages = 0;
     }
   }
 
