@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '../_lib/supabase.js';
-import { iclosedListAll, iclosedFetch, pick } from '../_lib/iclosed.js';
+import { iclosedListOffset, iclosedFetch, pick } from '../_lib/iclosed.js';
 import { resolveInternal } from '../_lib/closers.js';
 
 export default async function handler(req, res) {
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
 
   try {
     // /v1/users uses offset-based pagination (page=N is ignored)
-    const users = await iclosedListAll('/v1/users', { pageSize: 100, maxPages: 5, paginationMode: 'offset' });
+    const users = await iclosedListOffset('/v1/users', { pageSize: 100, maxPages: 5 });
     const supabase = getSupabaseAdmin();
 
     const rows = [];

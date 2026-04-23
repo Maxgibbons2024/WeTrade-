@@ -1,11 +1,17 @@
-// iClosed API helper — handles auth, pagination, and rate limiting.
+// iClosed API helper — auth + minimal fetch utilities.
 // Docs: https://public.api.iclosed.io
 // Auth: Authorization: Bearer iclosed_<key>
 //
 // Response shapes we've observed in the wild:
 //   GET /v1/users       → { data: { users: [...], count: 12 } }
 //   GET /v1/eventCalls  → { data: { eventCalls: [...], count: 6868 } }
-// Pagination is offset-based: ?limit=100&offset=0
+//
+// History note: we used to have a generic iclosedListAll() that paginated
+// /v1/eventCalls across 70+ pages. It consistently dropped ~100 calls at the
+// tail (most-recent bookings) no matter how we tuned it. The sync was
+// rewritten to fetch day-by-day instead (each day is ≤100 calls = one
+// request, no pagination), so iclosedListAll is gone. iclosedListOffset
+// stays for /v1/users which has ≤20 rows total.
 
 const BASE_URL = 'https://public.api.iclosed.io';
 
@@ -69,16 +75,14 @@ export async function iclosedFetch(path, init = {}) {
  *   { data: { eventCalls: [...] } }      double-wrap (what iClosed actually uses)
  *   { data: { users: [...] } }
  */
-function extractItems(json) {
+export function extractItems(json) {
   if (!json) return [];
   if (Array.isArray(json)) return json;
 
-  // Single-wrap patterns
   for (const k of ['items', 'results', 'eventCalls', 'users']) {
     if (Array.isArray(json[k])) return json[k];
   }
 
-  // Double-wrap under .data
   if (json.data) {
     if (Array.isArray(json.data)) return json.data;
     for (const k of ['eventCalls', 'users', 'calls', 'events', 'items', 'results']) {
@@ -90,67 +94,23 @@ function extractItems(json) {
 }
 
 /**
- * Page through a list endpoint until exhausted.
+ * Offset-based pagination for small endpoints (/v1/users).
  *
- * iClosed endpoints are inconsistent about pagination:
- *   - /v1/eventCalls uses `page=N` (1-indexed)      [default]
- *   - /v1/users      uses `offset=N*limit` (0-indexed)
- *
- * Pass `paginationMode: 'offset'` for endpoints that want offset pagination.
- *
- * Historical bug: parallel batch fetching (concurrency=5) combined with
- * the "no new items added → stop" heuristic caused the sync to bail out
- * early, missing the tail of the result set. For /v1/eventCalls we were
- * missing the ~100 most recent bookings.
- *
- * Fix: paginate serially. Only stop on genuinely empty / short pages.
- * Allow up to 3 consecutive all-duplicate pages before bailing (some
- * iClosed endpoints return overlapping pages when pagination is unstable).
+ * NOT intended for /v1/eventCalls — that endpoint has ~7000 rows and its
+ * pagination is unstable at the tail. Use the day-by-day approach in
+ * api/iclosed/sync.js instead.
  */
-export async function iclosedListAll(path, { pageSize = 100, maxPages = 200, paginationMode = 'page' } = {}) {
-  const seen = new Set();
+export async function iclosedListOffset(path, { pageSize = 100, maxPages = 5 } = {}) {
   const all = [];
   const sep = path.includes('?') ? '&' : '?';
-
-  const fetchPage = async (pageIdx) => {
-    // offset mode is 0-indexed, page mode is 1-indexed
-    const pagingParam = paginationMode === 'offset'
-      ? `offset=${pageIdx * pageSize}`
-      : `page=${pageIdx + 1}`;
-    const url = `${path}${sep}limit=${pageSize}&${pagingParam}`;
-    const json = await iclosedFetch(url);
-    return extractItems(json);
-  };
-
-  let consecutiveDupPages = 0;
   for (let p = 0; p < maxPages; p++) {
-    const items = await fetchPage(p);
-    if (!items.length) break; // true end of result set
-
-    let added = 0;
-    for (const item of items) {
-      const id = item?.id ?? item?.callId ?? item?.userId;
-      const key = id != null ? String(id) : JSON.stringify(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      all.push(item);
-      added += 1;
-    }
-
-    // Short page → last page of result set.
+    const url = `${path}${sep}limit=${pageSize}&offset=${p * pageSize}`;
+    const json = await iclosedFetch(url);
+    const items = extractItems(json);
+    if (!items.length) break;
+    all.push(...items);
     if (items.length < pageSize) break;
-
-    // If a page returned zero new items, it MAY be because pagination is
-    // broken OR iClosed is returning duplicates. Allow up to 3 consecutive
-    // all-duplicate pages before bailing out.
-    if (added === 0) {
-      consecutiveDupPages += 1;
-      if (consecutiveDupPages >= 3) break;
-    } else {
-      consecutiveDupPages = 0;
-    }
   }
-
   return all;
 }
 
