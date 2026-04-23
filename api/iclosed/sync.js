@@ -144,6 +144,60 @@ export default async function handler(req, res) {
       });
     }
 
+    // Setter-specific probe: find a setter by email, then filter eventCalls
+    // via the server-side setterIds param. Tells us definitively whether
+    // iClosed associates any calls with this person.
+    // Hit /api/iclosed/sync?key=...&debug=setter&email=connor.george@wetrade.io
+    if (req.query?.debug === 'setter') {
+      const email = (req.query?.email || '').toLowerCase();
+      if (!email) return res.status(400).json({ error: 'Pass &email=...' });
+
+      const usersJson = await iclosedFetch('/v1/users?limit=100');
+      const userList =
+        usersJson?.data?.users || usersJson?.users || usersJson?.data || [];
+      const match = userList.find((u) => (u.email || '').toLowerCase() === email);
+      if (!match) {
+        return res.status(200).json({
+          error: 'User not found in /v1/users',
+          email,
+          userCount: userList.length,
+          userEmails: userList.map((u) => u.email).filter(Boolean),
+        });
+      }
+      const userId = match.id ?? match.userId;
+
+      // Try both server-side filter paths: setterIds= and userIds=
+      const [bySetter, byUser, byContactOwner] = await Promise.all([
+        iclosedFetch(`/v1/eventCalls?eventType=ALL&setterIds=${userId}&dateFrom=${dateFrom}&dateTo=${dateTo}&limit=10&page=0`).catch((e) => ({ error: e.message })),
+        iclosedFetch(`/v1/eventCalls?eventType=ALL&userIds=${userId}&dateFrom=${dateFrom}&dateTo=${dateTo}&limit=10&page=0`).catch((e) => ({ error: e.message })),
+        // /v1/contacts supports userId filter → contacts assigned to this user
+        iclosedFetch(`/v1/contacts?userId=${userId}&limit=10`).catch((e) => ({ error: e.message })),
+      ]);
+
+      return res.status(200).json({
+        email,
+        userId,
+        userRecord: match,
+        bySetterIds: {
+          count: bySetter?.data?.count ?? null,
+          sampleCallIds: (bySetter?.data?.eventCalls || []).map((c) => c.id).slice(0, 5),
+          sample: bySetter?.data?.eventCalls?.[0] || null,
+          error: bySetter?.error,
+        },
+        byUserIds_CloserFilter: {
+          count: byUser?.data?.count ?? null,
+          sampleCallIds: (byUser?.data?.eventCalls || []).map((c) => c.id).slice(0, 5),
+          error: byUser?.error,
+        },
+        asContactOwner: {
+          count: byContactOwner?.data?.count ?? byContactOwner?.data?.contacts?.length ?? null,
+          sampleContactIds: (byContactOwner?.data?.contacts || []).map((c) => c.id).slice(0, 5),
+          sample: (byContactOwner?.data?.contacts || [])[0] || null,
+          error: byContactOwner?.error,
+        },
+      });
+    }
+
     const rawCalls = await fetchCallsInWindow({ dateFrom, dateTo });
     const fetchMs = Date.now() - t0;
 
