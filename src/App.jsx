@@ -97,7 +97,8 @@ export default function App() {
         }}
       />
       <Sidebar activePage={activePage} onNavigate={setActivePage} />
-      <main className="flex-1 min-h-screen overflow-auto p-4 md:p-6 lg:p-8">
+      {/* pt-16 on mobile clears the fixed hamburger button (top-4 left-4 + 40px button = ~56px) */}
+      <main className="flex-1 min-h-screen overflow-auto p-4 pt-16 md:p-6 md:pt-6 lg:p-8 lg:pt-8">
         <ActiveComponent />
       </main>
     </div>

@@ -55,8 +55,13 @@ export default function SortableTable({ columns, data, onRowClick, defaultSort }
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-800">
-      <table className="w-full text-sm">
+    // `relative` wrapper hosts the right-edge gradient hint that tells mobile
+    // users the table scrolls horizontally. min-w-[640px] forces the table to
+    // overflow on phones (below the `md` breakpoint) instead of squishing
+    // columns to unreadable widths; on desktop it just fits naturally.
+    <div className="relative">
+      <div className="overflow-x-auto rounded-xl border border-gray-800">
+        <table className="w-full text-sm min-w-[640px]">
         <thead>
           <tr className="bg-brand-darker border-b border-gray-800">
             {columns.map((col) => {
@@ -122,6 +127,12 @@ export default function SortableTable({ columns, data, onRowClick, defaultSort }
           )}
         </tbody>
       </table>
+      </div>
+      {/* Right-edge fade — pure CSS scroll affordance, mobile only */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-brand-darker to-transparent rounded-r-xl md:hidden"
+      />
     </div>
   );
 }

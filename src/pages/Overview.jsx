@@ -516,7 +516,7 @@ export default function Overview() {
 
         {/* Progress bar */}
         <div className="mb-4">
-          <div className="flex justify-between text-xs mb-1.5">
+          <div className="flex justify-between gap-2 text-xs mb-1.5">
             <span className="text-gray-500">
               {formatCurrency(totalCashCollected)} collected · Day {targetStats.dayOfMonth} of {targetStats.totalDays}
             </span>
@@ -536,7 +536,7 @@ export default function Overview() {
               style={{ width: `${Math.min(100, (totalCashCollected / monthlyTarget) * 100)}%` }}
             />
           </div>
-          <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+          <div className="flex justify-between gap-2 text-[10px] text-gray-600 mt-1">
             <span>£0</span>
             <span>{formatCurrency(monthlyTarget)}</span>
           </div>
@@ -570,33 +570,33 @@ export default function Overview() {
           <div className="bg-brand-dark rounded-lg p-4">
             <h5 className="text-xs font-semibold text-brand-cyan mb-3">Method 1: Cash-Based</h5>
             <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-300">Deals closed</span>
-                <span className="text-white">{targetStats.dealsCount} deals</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Deals closed</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.dealsCount} deals</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Avg deal size</span>
-                <span className="text-white">{formatCurrency(targetStats.avgDealSize)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Avg deal size</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{formatCurrency(targetStats.avgDealSize)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Deals/day</span>
-                <span className="text-white">{targetStats.dealsPerDay.toFixed(1)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Deals/day</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.dealsPerDay.toFixed(1)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Projected new deals</span>
-                <span className="text-white">{targetStats.projectedNewDeals} ({targetStats.dealsPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Projected new deals</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.projectedNewDeals} ({targetStats.dealsPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">New deal revenue</span>
-                <span className="text-white">{formatCurrency(targetStats.projectedNewDeals * targetStats.avgDealSize)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">New deal revenue</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{formatCurrency(targetStats.projectedNewDeals * targetStats.avgDealSize)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">+ PP expected</span>
-                <span className="text-green-400">{formatCurrency(targetStats.ppExpected)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">+ PP expected</span>
+                <span className="text-green-400 tabular-nums whitespace-nowrap">{formatCurrency(targetStats.ppExpected)}</span>
               </div>
-              <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between">
+              <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between gap-2">
                 <span className="text-white font-medium">Projection</span>
-                <span className={`font-bold ${targetStats.method1Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
+                <span className={`font-bold tabular-nums whitespace-nowrap ${targetStats.method1Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
                   {formatCurrency(targetStats.method1Total)}
                 </span>
               </div>
@@ -607,33 +607,33 @@ export default function Overview() {
           <div className="bg-brand-dark rounded-lg p-4">
             <h5 className="text-xs font-semibold text-purple-400 mb-3">Method 2: Calls-Based</h5>
             <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-300">Calls taken</span>
-                <span className="text-white">{targetStats.callsTaken} calls</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Calls taken</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.callsTaken} calls</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Revenue per call</span>
-                <span className="text-white">{formatCurrency(targetStats.revenuePerCall)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Revenue per call</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{formatCurrency(targetStats.revenuePerCall)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Calls booked/day</span>
-                <span className="text-white">{targetStats.avgBookedPerDay.toFixed(1)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Calls booked/day</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.avgBookedPerDay.toFixed(1)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Projected new calls</span>
-                <span className="text-white">{targetStats.projectedNewCalls} ({targetStats.avgBookedPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Projected new calls</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.projectedNewCalls} ({targetStats.avgBookedPerDay.toFixed(1)} x {targetStats.daysRemaining}d)</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">x {Math.round(targetStats.showRate * 100)}% show rate</span>
-                <span className="text-white">{targetStats.projectedCallsTaken} calls taken</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">x {Math.round(targetStats.showRate * 100)}% show rate</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{targetStats.projectedCallsTaken} calls taken</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Additional revenue</span>
-                <span className="text-white">{formatCurrency(targetStats.callsProjectionAdditional)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-300 truncate">Additional revenue</span>
+                <span className="text-white tabular-nums whitespace-nowrap">{formatCurrency(targetStats.callsProjectionAdditional)}</span>
               </div>
-              <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between">
+              <div className="border-t border-gray-800 pt-2 mt-2 flex justify-between gap-2">
                 <span className="text-white font-medium">Projection</span>
-                <span className={`font-bold ${targetStats.method2Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
+                <span className={`font-bold tabular-nums whitespace-nowrap ${targetStats.method2Total >= monthlyTarget ? 'text-green-400' : 'text-amber-400'}`}>
                   {formatCurrency(targetStats.method2Total)}
                 </span>
               </div>
@@ -643,7 +643,7 @@ export default function Overview() {
 
         {/* Combined average */}
         <div className="bg-brand-dark rounded-lg p-4">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between gap-2 items-center">
             <div>
               <p className="text-xs text-gray-300">Average Projection (both methods)</p>
               <p className="text-[10px] text-gray-400 mt-0.5">
@@ -685,7 +685,7 @@ export default function Overview() {
           </div>
           {/* Pace bar */}
           <div className="mb-3">
-            <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+            <div className="flex justify-between gap-2 text-[10px] text-gray-500 mb-1">
               <span>Current pace vs required</span>
               <span>{Math.round(targetStats.paceRatio * 100)}%</span>
             </div>
@@ -901,7 +901,7 @@ export default function Overview() {
               const isPast = new Date(call.scheduled_at).getTime() < Date.now();
               return (
                 <div key={call.id} className={`flex items-center gap-3 p-3 rounded-lg ${isPast ? 'bg-white/[0.01] opacity-50' : 'bg-white/[0.02]'}`}>
-                  <div className={`font-mono text-sm font-semibold w-14 tabular-nums ${isPast ? 'text-gray-500' : 'text-brand-cyan'}`}>{time}</div>
+                  <div className={`font-mono text-sm font-semibold w-12 sm:w-14 tabular-nums shrink-0 ${isPast ? 'text-gray-500' : 'text-brand-cyan'}`}>{time}</div>
                   {call.closer_id ? <CloserAvatar closerId={call.closer_id} /> : <div className="w-8 h-8 rounded-full bg-gray-800" />}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{call.contact_name || call.contact_email || 'Unknown'}</p>
